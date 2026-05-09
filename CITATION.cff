@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+title: "Unified Matrix Formulation for Active and Reactive Power Flow Contributions"
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+authors:
+  - family-names: "Todorovski"
+    given-names: "Mirko"
+
+repository-code: "https://github.com/todorovski-m/pf-contributions-matrix"
+
+keywords:
+  - power systems
+  - power flow
+  - loss allocation
+  - contribution matrix
+  - distribution networks
+
+license: MIT
+
+date-released: 2026-05-10
