@@ -1,4 +1,7 @@
-"""Compare the output of the current apfc.m/rpfc.m with paper_results/ (the frozen reference of the submitted paper).
+"""CSV values are read exactly (pandas float_precision="round_trip"; the default parser can be off by
+about 1e-13 relative for 17-digit values).
+
+Compare the output of the current apfc.m/rpfc.m with paper_results/ (the frozen reference of the submitted paper).
 
 Usage (from the root of the matrix repository):
     python3 tests/compare_legacy.py <dir with new <case>_apfc.csv and <case>_rpfc.csv> [--diff-csv FILE] [--t0-bad FILE]
@@ -88,8 +91,8 @@ def main():
     allrows = []; unexpected_total = 0
     for c in CASES:
         for k in ["apfc", "rpfc"]:
-            new = pd.read_csv(os.path.join(a.newdir, f"{c}_{k}.csv"))
-            ref = pd.read_csv(os.path.join("paper_results", f"{c}_{k}.csv"))
+            new = pd.read_csv(os.path.join(a.newdir, f"{c}_{k}.csv"), float_precision="round_trip")
+            ref = pd.read_csv(os.path.join("paper_results", f"{c}_{k}.csv"), float_precision="round_trip")
             if k == "rpfc": ref = relabel_case3(ref)
             on, orf, cn, cr, diffs, mx, n, relab = compare(new, ref)
             exp = 0

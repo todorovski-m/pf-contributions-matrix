@@ -1,4 +1,7 @@
-"""Compare the output of apfc.m/rpfc.m with the old iterative method (the reference for the corrected behaviour).
+"""CSV values are read exactly (pandas float_precision="round_trip"; the default parser can be off by
+about 1e-13 relative for 17-digit values).
+
+Compare the output of apfc.m/rpfc.m with the old iterative method (the reference for the corrected behaviour).
 
 Usage (from the root of the matrix repository):
     python3 -B tests/compare_old.py <dir with <case>_apfc.csv, <case>_rpfc.csv> <inputs dir> [<inputs dir> ...]
@@ -174,7 +177,7 @@ def main():
         branch_from = [int(x) for x in branch.F_BUS]
         for kind, T in [("apfc", A), ("rpfc", R)]:
             done, iters = st[kind.upper()]
-            M = pd.read_csv(os.path.join(a.outdir, f"{c}_{kind}.csv"))
+            M = pd.read_csv(os.path.join(a.outdir, f"{c}_{kind}.csv"), float_precision="round_trip")
             mk = matrix_keys(M.Line, kind); mpos = {k: i for i, k in enumerate(mk)}
             mcols = list(M.columns[1:])
             src_end = list(T.columns).index("F_BUS")

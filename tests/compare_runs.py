@@ -1,4 +1,7 @@
-"""Compare two output folders of apfc.m/rpfc.m (for example the current code against the T12a end state).
+"""CSV values are read exactly (pandas float_precision="round_trip"; the default parser can be off by
+about 1e-13 relative for 17-digit values).
+
+Compare two output folders of apfc.m/rpfc.m (for example the current code against the T12a end state).
 
 Usage (from the root of the matrix repository):
     python3 tests/compare_runs.py <dir A (new)> <dir B (reference)> [--tol 1e-12]
@@ -27,7 +30,7 @@ def main():
     print("|---|---|---|---|---|---|")
     fails, changes = 0, []
     for f in files:
-        N = pd.read_csv(os.path.join(a.new, f)); R = pd.read_csv(os.path.join(a.ref, f))
+        N = pd.read_csv(os.path.join(a.new, f), float_precision="round_trip"); R = pd.read_csv(os.path.join(a.ref, f), float_precision="round_trip")
         if N.shape != R.shape:
             print(f"| {f} | False ({N.shape} vs {R.shape}) | | False | | |"); fails += 1; continue
         d = np.abs(N.iloc[:, 1:].to_numpy(float) - R.iloc[:, 1:].to_numpy(float))
