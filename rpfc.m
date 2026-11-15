@@ -17,6 +17,24 @@ function [RPFC_tbl, mpc, info] = rpfc(casedata, opts)
 %   (CONDEST), the range of the attenuation factors, and the numbers of
 %   removed, flipped and converted elements.
 %
+%   Checks (see PFC_CHECKS) fall into three groups:
+%     errors, for conditions under which the results are not valid: the
+%       reactive flow digraph is cyclic and the spectral radius of N^Q is not
+%       below 1 (pfc:rpfc:spectralRadius); a bus with an outgoing branch has
+%       (near) zero total inflow (pfc:rpfc:zeroInflow);
+%     warnings, for conditions that can invalidate the results; they are
+%       listed in DIAG.warnings (rpfc currently issues none; APFC warns for a
+%       cyclic active digraph and for an active attenuation above 1; a
+%       spectral radius close to 1 and a near-singular A^Q are not yet
+%       checked, see DIAG.spectral_radius and DIAG.condest_A);
+%     information only, recorded in DIAG and never printed: a cyclic
+%       reactive digraph with spectral radius below 1 (DIAG.acyclic,
+%       DIAG.spectral_radius; circulating flows are allowed), and branches
+%       with a negative series flow, that is a negative reactive attenuation
+%       (DIAG.negative_series_flow.count and .branches). Negative attenuation
+%       occurs in standard cases (case14, case118) and leads to negative
+%       contributions in some cells; it does not invalidate the results.
+%
 %   The method uses a matrix-based formulation based on the proportionality
 %   principle for reactive flow-component allocation.
 %
@@ -244,7 +262,7 @@ hf   = h(f);
 %  branch labels: index in the returned mpc.branch and the oriented bus pair
 br_labels = arrayfun(@(k) sprintf('%d (%d-%d)', k, f(k), t(k)), (1:nl)', 'UniformOutput', false);
 pfc_checks('inflow', Qtot, f, tol_div, 'rpfc');
-[w_ser, i_ser] = pfc_checks('series_flow', Qs(1:nl), Qe(1:nl), br_labels, tol);
+[~, i_ser] = pfc_checks('series_flow', Qs(1:nl), Qe(1:nl), br_labels, tol);   % informational, no warning
 
 %% Build the system matrix and right-hand side, then solve.
 M   = Cf * Ct';
@@ -406,8 +424,8 @@ info.converted = struct( ...
     'inductive_to_end_shunt_to_demand', numel(extra_d_bus_qst));
 info.acyclic = acyclic;
 info.spectral_radius = rho;
-info.negative_series_flow_branches = br_labels(i_ser).';
-info.warnings = [w_ser, w_cyc];
+info.negative_series_flow = struct('count', numel(i_ser), 'branches', {br_labels(i_ser).'});
+info.warnings = w_cyc;
 info.opts = opts;
 
 %% Output table

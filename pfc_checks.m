@@ -37,10 +37,13 @@ function varargout = pfc_checks(action, varargin)
 %   PFC_CHECKS('inflow', TOTAL, F, TOL_DIV, KIND)
 %     Error pfc:<KIND>:zeroInflow, naming the buses, if the total inflow
 %     TOTAL(k) of a bus k with an outgoing branch (F == k) is below TOL_DIV.
-%   [W, IDX] = PFC_CHECKS('series_flow', QS, QE, LABELS, TOL)
-%     Warning pfc:rpfc:negativeSeriesFlow listing the branches whose series
-%     flow at the from-end QS or at the to-end QE is below -TOL (negative
-%     reactive attenuation).
+%   [W, IDX] = PFC_CHECKS('series_flow', QS, QE, LABELS, TOL, WARN)
+%     Indices IDX of the branches whose series flow at the from-end QS or at
+%     the to-end QE is below -TOL (negative reactive attenuation). This is
+%     informational: negative attenuation occurs in standard cases (for
+%     example case14, case118) and does not invalidate the results. No
+%     warning is printed unless WARN is true (default false); then the
+%     warning pfc:rpfc:negativeSeriesFlow lists the branches.
 %
 %   W is a cell array of the warning identifiers that were issued.
 
@@ -214,10 +217,13 @@ if ~isempty(bad)
 end
 end
 
-function [w, idx] = check_series_flow(qs, qe, labels, tol)
+function [w, idx] = check_series_flow(qs, qe, labels, tol, warn)
+if nargin < 5
+    warn = false;
+end
 w = {};
 idx = find(qs < -tol | qe < -tol);
-if ~isempty(idx)
+if warn && ~isempty(idx)
     id = 'pfc:rpfc:negativeSeriesFlow';
     warning(id, 'Negative series reactive flow (negative attenuation) in branch(es): %s.', ...
         strjoin(labels(idx).', ', '));

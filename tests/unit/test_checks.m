@@ -77,12 +77,18 @@ catch
 end
 pfc_report('inflow: zero inflow at a bus without an outgoing branch (the sink) is not an error', ok);
 
-% negative series flow: warning listing the branch
+% negative series flow: informational by default (indices returned, no warning); warning only with warn = true
 lastwarn('', '');
 [w, idx] = pfc_checks('series_flow', [6.4; 12.4], [-2.1; 2.2], {'1 (2-1)'; '2 (1-2)'}, 1e-6);
-[m, id] = lastwarn;
-pfc_report('series flow: negative series flow gives warning pfc:rpfc:negativeSeriesFlow naming the branch', ...
-    strcmp(id, 'pfc:rpfc:negativeSeriesFlow') && isequal(idx, 1) && ~isempty(strfind(m, '1 (2-1)')) && isempty(strfind(m, '2 (1-2)')), m);
+[~, id] = lastwarn;
+pfc_report('series flow: negative series flow is returned without a warning by default', ...
+    isequal(idx, 1) && isempty(w) && isempty(id), sprintf('idx = %s, id = %s', mat2str(idx), id));
+warning('on', 'pfc:rpfc:negativeSeriesFlow');
 lastwarn('', '');
-[w, idx] = pfc_checks('series_flow', [6.4; 12.4], [2.1; 2.2], {'1 (2-1)'; '2 (1-2)'}, 1e-6);
-pfc_report('series flow: positive series flows give no warning', isempty(w) && isempty(idx));
+[w, idx] = pfc_checks('series_flow', [6.4; 12.4], [-2.1; 2.2], {'1 (2-1)'; '2 (1-2)'}, 1e-6, true);
+[m, id] = lastwarn;
+warning('off', 'pfc:rpfc:negativeSeriesFlow');
+pfc_report('series flow: with warn = true, warning pfc:rpfc:negativeSeriesFlow naming only that branch', ...
+    strcmp(id, 'pfc:rpfc:negativeSeriesFlow') && isequal(idx, 1) && ~isempty(strfind(m, '1 (2-1)')) && isempty(strfind(m, '2 (1-2)')), m);
+[w, idx] = pfc_checks('series_flow', [6.4; 12.4], [2.1; 2.2], {'1 (2-1)'; '2 (1-2)'}, 1e-6, true);
+pfc_report('series flow: positive series flows give no index and no warning', isempty(w) && isempty(idx));

@@ -13,5 +13,6 @@ mkdir -p $SCRATCH/cases $SCRATCH/results $SCRATCH/unit
 cp cases/*.m $SCRATCH/cases/
 for f in tests/cases_synthetic/*.m(N); do cp $f $SCRATCH/cases/; done
 cp tests/unit/*.m $SCRATCH/unit/
+cp tests/data/*.csv $SCRATCH/unit/
 SHIMS=$PWD/tests/octave_shims
 cd $SCRATCH && octave --no-gui --eval "addpath('$SHIMS'); addpath('$SCRATCH/unit'); $1"
