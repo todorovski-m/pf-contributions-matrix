@@ -1,10 +1,22 @@
-function [APFC_tbl, mpc] = apfc(casedata)
+function [APFC_tbl, mpc, info] = apfc(casedata, opts)
 %APFC  Active Power Flow Components (APFC) for a MATPOWER case.
 %
-%   [APFC_TBL, MPC] = APFC(CASEDATA) runs a power flow for CASEDATA, constructs
-%   an expanded network that includes demand-as-branches and a virtual sink
-%   bus, builds the APFC allocation matrix, and computes generator
-%   contributions through each branch (including demand "branches").
+%   [APFC_TBL, MPC, DIAG] = APFC(CASEDATA, OPTS) runs a power flow for
+%   CASEDATA, constructs an expanded network that includes demand-as-branches
+%   and a virtual sink bus, builds the APFC allocation matrix, and computes
+%   generator contributions through each branch (including demand "branches").
+%
+%   CASEDATA is a case name (for example 'cases/case9'), an unsolved MATPOWER
+%   case struct, or, with OPTS.solved = true, a struct that already holds a
+%   solved power flow (for example the output of RUNPF); then RUNPF is not
+%   called. OPTS is optional; see PFC_CHECKS('options') for the fields
+%   (tol, tol_div, write, solved, name). The defaults reproduce the earlier
+%   behaviour: APFC(CASEDATA) runs RUNPF and writes results/<case>_apfc.csv.
+%
+%   DIAG is a struct with sizes, the number of non-zeros of N and A, whether
+%   N, A and B are sparse, an estimate of the 1-norm condition number of A
+%   (CONDEST), the range of the attenuation factors, and the numbers of
+%   removed, flipped and converted elements.
 %
 %   Conversions of negative injections (as in the iterative method):
 %     a bus with negative active demand (PD < -tol) is an active source
@@ -20,39 +32,40 @@ function [APFC_tbl, mpc] = apfc(casedata)
 %   MPC is the modified MATPOWER case after preprocessing.
 %
 
-%% Load case and run MATPOWER power flow
-if nargin < 1
+%% Options, load case and run MATPOWER power flow
+if nargin < 1 || isempty(casedata)
     casedata = 'cases/case1';
 end
+if nargin < 2
+    opts = struct();
+end
+opts = pfc_checks('options', opts);
+tol = opts.tol;
 
 define_constants;
-tol = 1e-6;   % threshold for the sign tests of injections (negative demand and generation)
-opt = mpoption('verbose', 0, 'out.all', 0);
-
-mpc = loadcase(casedata);
-mpc = runpf(mpc, opt);
+[mpc, name] = load_solved(casedata, opts);
 
 %% Remove inactive network elements
 
 % remove branches carrying zero power
-i = abs(mpc.branch(:,PF)) < 1e-6 & abs(mpc.branch(:,PT)) < 1e-6;
-mpc.branch = mpc.branch(~i,:);
+i_del_br = abs(mpc.branch(:,PF)) < tol & abs(mpc.branch(:,PT)) < tol;
+mpc.branch = mpc.branch(~i_del_br,:);
 
 % remove generators producing zero power
-i = abs(mpc.gen(:,PG)) < 1e-6;
-mpc.gen = mpc.gen(~i,:);
+i_del_gen = abs(mpc.gen(:,PG)) < tol;
+mpc.gen = mpc.gen(~i_del_gen,:);
 
 %% Normalize branch orientations
 %  MATPOWER stores PT/QT as power from the to-bus into the branch; sign-correct to power leaving the branch into the to-bus.
 mpc.branch(:, [PT QT]) = -mpc.branch(:, [PT QT]);
 
 % flip branches that still have PF < 0
-i = mpc.branch(:, PF) < 0;
-if any(i)
+i_flip = mpc.branch(:, PF) < 0;
+if any(i_flip)
     % swap endpoints
-    mpc.branch(i, [F_BUS T_BUS]) = mpc.branch(i, [T_BUS F_BUS]);
+    mpc.branch(i_flip, [F_BUS T_BUS]) = mpc.branch(i_flip, [T_BUS F_BUS]);
     % flip flows
-    mpc.branch(i, [PF QF PT QT]) = -mpc.branch(i, [PT QT PF QF]);
+    mpc.branch(i_flip, [PF QF PT QT]) = -mpc.branch(i_flip, [PT QT PF QF]);
 end
 
 nb = size(mpc.bus, 1);  % number of buses
@@ -60,7 +73,7 @@ sink = nb + 1;          % index of virtual sink bus
 
 %% Demand-as-branches construction
 %  Each demand is converted to a branch whose "to" bus = sink
-i = mpc.bus(:, PD) > 0;
+i = mpc.bus(:, PD) > tol;
 d_bus_pd = mpc.bus(i, BUS_I);   % buses with demand
 Pd_load  = mpc.bus(i, PD);      % demand values
 % generators with negative output are demands (row G_b)
@@ -174,8 +187,67 @@ for i = 1:nl
     end
 end
 
+%% Diagnostics
+info = struct();
+info.case = name;
+info.n_bus = nb;
+info.n_branch = nl;
+info.n_demand = nd;
+info.n_source = ng;
+info.n_e = ne;
+info.nnz_N = nnz(N);
+info.nnz_A = nnz(A);
+info.issparse = struct('N', issparse(N), 'A', issparse(A), 'B', issparse(B));
+info.condest_A = condest(A);
+if nl > 0
+    info.attenuation_range = [min(a(1:nl)), max(a(1:nl))];
+else
+    info.attenuation_range = zeros(1, 0);
+end
+info.removed = struct('branches', nnz(i_del_br), 'generators', nnz(i_del_gen));
+info.flipped_branches = nnz(i_flip);
+info.converted = struct('negative_demand_to_source', numel(src_bus_pd), ...
+                        'negative_generation_to_demand', numel(d_bus_pg));
+info.opts = opts;
+
+%% Output table
 APFC_tbl = array2table(APFC_tbl, 'VariableNames', gen_names);
 APFC_tbl = addvars(APFC_tbl, line_names, 'Before', 1, 'NewVariableNames', 'Line');
 
-result = strrep(casedata, 'cases/', 'results/');
-writetable(APFC_tbl, [result '_apfc.csv']);
+if opts.write && ~isempty(name)
+    result = strrep(name, 'cases/', 'results/');
+    writetable(APFC_tbl, [result '_apfc.csv']);
+end
+end
+
+function [mpc, name] = load_solved(casedata, opts)
+%LOAD_SOLVED  Load CASEDATA and run the power flow unless OPTS.solved.
+define_constants;
+if ischar(casedata)
+    name = casedata;
+    mpc = loadcase(casedata);
+elseif isstruct(casedata)
+    name = opts.name;
+    if opts.solved
+        mpc = casedata;          % keep all fields of the solved struct
+    else
+        mpc = loadcase(casedata);
+    end
+else
+    error('pfc:input:casedata', 'CASEDATA must be a case name or a MATPOWER case struct.');
+end
+if opts.solved
+    if size(mpc.branch, 2) < QT
+        error('pfc:input:notSolved', ...
+            'opts.solved is true, but the branch matrix has no power flow columns (PF, QF, PT, QT).');
+    end
+    if isfield(mpc, 'success') && ~mpc.success
+        error('pfc:input:notConverged', 'opts.solved is true, but the power flow did not converge (success = 0).');
+    end
+else
+    mpc = runpf(mpc, mpoption('verbose', 0, 'out.all', 0));
+    if ~mpc.success
+        error('pfc:runpf:notConverged', 'The MATPOWER power flow did not converge.');
+    end
+end
+end

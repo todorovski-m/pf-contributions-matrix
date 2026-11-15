@@ -19,7 +19,7 @@ if (( ${#CASES} == 0 )); then
 fi
 mkdir -p $OUT
 SCRATCH=$(mktemp -d /tmp/run_matrix.XXXXXX)
-cp apfc.m rpfc.m $SCRATCH/
+cp apfc.m rpfc.m pfc_checks.m $SCRATCH/
 mkdir -p $SCRATCH/cases $SCRATCH/results
 cp cases/*.m $SCRATCH/cases/
 for f in tests/cases_synthetic/*.m(N); do cp $f $SCRATCH/cases/; done

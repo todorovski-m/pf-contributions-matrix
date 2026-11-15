@@ -1,9 +1,21 @@
-function [RPFC_tbl, mpc] = rpfc(casedata)
+function [RPFC_tbl, mpc, info] = rpfc(casedata, opts)
 %RPFC  Reactive Power Flow Components (RPFC) for a MATPOWER case.
 %
-%   [RPFC_TBL, MPC] = RPFC(CASEDATA) runs a power flow for CASEDATA and computes
-%   the reactive power flow contributions from each reactive source to every
-%   branch end and demand in the network.
+%   [RPFC_TBL, MPC, DIAG] = RPFC(CASEDATA, OPTS) runs a power flow for
+%   CASEDATA and computes the reactive power flow contributions from each
+%   reactive source to every branch end and demand in the network.
+%
+%   CASEDATA is a case name (for example 'cases/case9'), an unsolved MATPOWER
+%   case struct, or, with OPTS.solved = true, a struct that already holds a
+%   solved power flow (for example the output of RUNPF); then RUNPF is not
+%   called. OPTS is optional; see PFC_CHECKS('options') for the fields
+%   (tol, tol_div, write, solved, name). The defaults reproduce the earlier
+%   behaviour: RPFC(CASEDATA) runs RUNPF and writes results/<case>_rpfc.csv.
+%
+%   DIAG is a struct with sizes, the number of non-zeros of N and A, whether
+%   N, A and B are sparse, an estimate of the 1-norm condition number of A
+%   (CONDEST), the range of the attenuation factors, and the numbers of
+%   removed, flipped and converted elements.
 %
 %   The method uses a matrix-based formulation based on the proportionality
 %   principle for reactive flow-component allocation.
@@ -38,16 +50,19 @@ function [RPFC_tbl, mpc] = rpfc(casedata)
 %   MPC is the modified MATPOWER case after power flow.
 %
 
-%% Load case and run MATPOWER power flow
-if nargin < 1
+%% Options, load case and run MATPOWER power flow
+if nargin < 1 || isempty(casedata)
     casedata = 'cases/case1';
 end
+if nargin < 2
+    opts = struct();
+end
+opts = pfc_checks('options', opts);
+tol = opts.tol;          % deletion and classification threshold
+tol_div = opts.tol_div;  % division guard and negligible self-term threshold
 
 define_constants;
-tol = 1e-6;   % threshold for the sign tests of injections (negative demand)
-opt = mpoption('verbose', 0, 'out.all', 0);
-mpc = loadcase(casedata);
-mpc = runpf(mpc, opt);
+[mpc, name] = load_solved(casedata, opts);
 
 %% Normalize branch orientations
 %  MATPOWER stores PT/QT as power from the to-bus into the branch; sign-correct to power leaving the branch into the to-bus.
@@ -68,24 +83,24 @@ Qsf = Qs - mpc.branch(:, QF);
 Qst = mpc.branch(:, QT) - Qe;
 
 % Handle negative Qsf (inductive shunt at from-end): convert to extra demand
-i_neg_qsf       = Qsf < -1e-6;
+i_neg_qsf       = Qsf < -tol;
 extra_d_bus_qsf = mpc.branch(i_neg_qsf, F_BUS);
 extra_Qd_qsf    = -Qsf(i_neg_qsf);
 Qsf(i_neg_qsf) = 0;
 
 % Handle negative Qst (inductive shunt at to-end): convert to extra demand
-i_neg_qst       = Qst < -1e-6;
+i_neg_qst       = Qst < -tol;
 extra_d_bus_qst = mpc.branch(i_neg_qst, T_BUS);
 extra_Qd_qst    = -Qst(i_neg_qst);
 Qst(i_neg_qst) = 0;
 
 %% Remove inactive branches and zero-power generators
-i_zero = abs(mpc.branch(:, QF)) < 1e-6 & abs(mpc.branch(:, QT)) < 1e-6;
+i_zero = abs(mpc.branch(:, QF)) < tol & abs(mpc.branch(:, QT)) < tol;
 mpc.branch = mpc.branch(~i_zero, :);
 Qsf = Qsf(~i_zero);
 Qst = Qst(~i_zero);
 
-i_zero_gen = abs(mpc.gen(:, QG)) < 1e-6;
+i_zero_gen = abs(mpc.gen(:, QG)) < tol;
 mpc.gen = mpc.gen(~i_zero_gen, :);
 
 %% Flip branches where both QF < 0 and QT < 0
@@ -136,18 +151,18 @@ nb   = size(mpc.bus, 1);
 sink = nb + 1;
 %% Reactive demand branches (all to sink)
 % QD loads
-i_qd     = mpc.bus(:, QD) > 1e-6;
+i_qd     = mpc.bus(:, QD) > tol;
 d_bus_qd = mpc.bus(i_qd, BUS_I);
 Qd_load  = mpc.bus(i_qd, QD);
 
 % Negative-QG generators -> reactive loads
-i_qg_neg    = mpc.gen(:, QG) < -1e-6;
+i_qg_neg    = mpc.gen(:, QG) < -tol;
 d_bus_qgneg = mpc.gen(i_qg_neg, GEN_BUS);
 Qd_qgneg    = -mpc.gen(i_qg_neg, QG);
 
 % Negative bus shunts -> reactive loads
 Qsh = mpc.bus(:, VM).^2 .* mpc.bus(:, BS);
-i_qs_neg    = Qsh < -1e-6;
+i_qs_neg    = Qsh < -tol;
 d_bus_qsneg = mpc.bus(i_qs_neg, BUS_I);
 Qd_qsneg    = -Qsh(i_qs_neg);
 
@@ -158,13 +173,13 @@ nd    = numel(Qd);
 
 %% Reactive sources
 % Positive-QG generators
-i_qg_pos  = mpc.gen(:, QG) > 1e-6;
+i_qg_pos  = mpc.gen(:, QG) > tol;
 src_bus_g = mpc.gen(i_qg_pos, GEN_BUS);
 Qg_src    = mpc.gen(i_qg_pos, QG);
 ng        = numel(Qg_src);
 
 % Positive bus shunts
-i_qs_pos   = Qsh > 1e-6;
+i_qs_pos   = Qsh > tol;
 src_bus_qs = mpc.bus(i_qs_pos, BUS_I);
 Qs_src     = Qsh(i_qs_pos);
 n_qs       = numel(Qs_src);
@@ -221,12 +236,12 @@ RPFCt = diag(aQ) * RPFCf;
 %  system matrix used above.
 self_toend = zeros(nl, 1);
 for i = 1:nl
-    if abs(Qs(i)) > 1e-9
+    if abs(Qs(i)) > tol_div
         self_toend(i) = (Qe(i) / Qs(i)) * Qsf(i) + Qst(i);
     end
 end
 
-i_self    = find(self_toend > 1e-9);
+i_self    = find(self_toend > tol_div);
 n_self    = numel(i_self);
 RPFCf_self  = zeros(ne, nl);
 RPFCt_self = zeros(ne, nl);
@@ -332,8 +347,73 @@ if n_case3 > 0
     row_labels = [row_labels; case3_flab; case3_tlab];
 end
 
+%% Diagnostics
+info = struct();
+info.case = name;
+info.n_bus = nb;
+info.n_branch = nl;
+info.n_demand = nd;
+info.n_source = ns;
+info.n_e = ne;
+info.nnz_N = nnz(N);
+info.nnz_A = nnz(A);
+info.issparse = struct('N', issparse(N), 'A', issparse(A), 'B', issparse(B));
+info.condest_A = condest(A);
+if nl > 0
+    info.attenuation_range = [min(aQ(1:nl)), max(aQ(1:nl))];
+else
+    info.attenuation_range = zeros(1, 0);
+end
+info.removed = struct('branches', nnz(i_zero), 'generators', nnz(i_zero_gen));
+info.flipped_branches = nnz(i_flip);
+info.converted = struct( ...
+    'negative_generation_to_demand', numel(d_bus_qgneg), ...
+    'negative_demand_to_source', n_qd, ...
+    'inductive_bus_shunt_to_demand', numel(d_bus_qsneg), ...
+    'case2_branches_to_demands', numel(c2_extra_bus) / 2, ...
+    'case3_branches_to_sources', n_case3, ...
+    'inductive_from_end_shunt_to_demand', numel(extra_d_bus_qsf), ...
+    'inductive_to_end_shunt_to_demand', numel(extra_d_bus_qst));
+info.opts = opts;
+
+%% Output table
 RPFC_tbl = array2table(RPFC_data, 'VariableNames', all_names);
 RPFC_tbl = addvars(RPFC_tbl, row_labels, 'Before', 1, 'NewVariableNames', 'Line');
 
-result = strrep(casedata, 'cases/', 'results/');
-writetable(RPFC_tbl, [result '_rpfc.csv']);
+if opts.write && ~isempty(name)
+    result = strrep(name, 'cases/', 'results/');
+    writetable(RPFC_tbl, [result '_rpfc.csv']);
+end
+end
+
+function [mpc, name] = load_solved(casedata, opts)
+%LOAD_SOLVED  Load CASEDATA and run the power flow unless OPTS.solved.
+define_constants;
+if ischar(casedata)
+    name = casedata;
+    mpc = loadcase(casedata);
+elseif isstruct(casedata)
+    name = opts.name;
+    if opts.solved
+        mpc = casedata;          % keep all fields of the solved struct
+    else
+        mpc = loadcase(casedata);
+    end
+else
+    error('pfc:input:casedata', 'CASEDATA must be a case name or a MATPOWER case struct.');
+end
+if opts.solved
+    if size(mpc.branch, 2) < QT
+        error('pfc:input:notSolved', ...
+            'opts.solved is true, but the branch matrix has no power flow columns (PF, QF, PT, QT).');
+    end
+    if isfield(mpc, 'success') && ~mpc.success
+        error('pfc:input:notConverged', 'opts.solved is true, but the power flow did not converge (success = 0).');
+    end
+else
+    mpc = runpf(mpc, mpoption('verbose', 0, 'out.all', 0));
+    if ~mpc.success
+        error('pfc:runpf:notConverged', 'The MATPOWER power flow did not converge.');
+    end
+end
+end
