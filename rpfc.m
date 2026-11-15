@@ -39,7 +39,14 @@ function [RPFC_tbl, mpc, info] = rpfc(casedata, opts)
 %     a bus with negative reactive demand (QD < -tol) is a reactive source
 %       (column D_b);
 %     a bus shunt is a source if it injects (column S_b) and a demand if it
-%       absorbs (row Bs_b).
+%       absorbs (row Bs_b);
+%     an inductive transformer shunt (negative shunt flow at the from-end or
+%       the to-end) is a demand (row Tf_b or Tt_b), except for a Case-2
+%       branch: its two terminal demands (rows C2_b) already contain its
+%       shunt power, so it gets no Tf_b or Tt_b row (as in the iterative
+%       method, which converts Case-2 branches before it converts the
+%       transformer shunts). Case-3 branches keep their Tf_b and Tt_b rows,
+%       as in the iterative method.
 %
 %   Source columns, in this order: G_b (generators with QG > tol), S_b
 %   (injecting bus shunts), D_b (buses with negative reactive demand),
@@ -85,14 +92,22 @@ Qe  = imag(V(tb).*conj(I)) * mpc.baseMVA;
 Qsf = Qs - mpc.branch(:, QF);
 Qst = mpc.branch(:, QT) - Qe;
 
+% Branches that consume reactive power at both ends (Case 2, QF > 0 and
+% delivered QT < 0) are later replaced by their two terminal demands (C2_b),
+% which already contain their shunt power. As in the iterative method, they
+% get no transformer-shunt demand (Tf_b, Tt_b). The test on the delivered
+% terminal flows here gives the same Case-2 set as the classification below:
+% the orientation flip never applies to a Case-2 branch.
+is_case2_branch = (mpc.branch(:, QF) > 0) & (mpc.branch(:, QT) < 0);
+
 % Handle negative Qsf (inductive shunt at from-end): convert to extra demand
-i_neg_qsf       = Qsf < -tol;
+i_neg_qsf       = Qsf < -tol & ~is_case2_branch;
 extra_d_bus_qsf = mpc.branch(i_neg_qsf, F_BUS);
 extra_Qd_qsf    = -Qsf(i_neg_qsf);
 Qsf(i_neg_qsf) = 0;
 
 % Handle negative Qst (inductive shunt at to-end): convert to extra demand
-i_neg_qst       = Qst < -tol;
+i_neg_qst       = Qst < -tol & ~is_case2_branch;
 extra_d_bus_qst = mpc.branch(i_neg_qst, T_BUS);
 extra_Qd_qst    = -Qst(i_neg_qst);
 Qst(i_neg_qst) = 0;
