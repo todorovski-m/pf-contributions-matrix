@@ -8,6 +8,11 @@ authors:
 
 repository-code: "https://github.com/todorovski-m/pf-contributions-matrix"
 
+version: "2.0"
+# DOI PLACEHOLDER: no DOI exists yet for version 2.0. After the new Zenodo version has been
+# created, add the line below with the DOI that Zenodo assigns (do not use any other value):
+# doi: 10.5281/zenodo.<number assigned by Zenodo>
+
 keywords:
   - power systems
   - power flow
@@ -17,4 +22,4 @@ keywords:
 
 license: MIT
 
-date-released: 2026-05-10
+date-released: 2026-11-15
