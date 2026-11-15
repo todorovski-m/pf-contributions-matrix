@@ -95,3 +95,7 @@ In addition, `case14_rpfc.csv` (whose shape differs, so it is not in the list ab
 - `apfc(casedata)` and `rpfc(casedata)` work as before, and write the same files.
 - The result tables differ only as listed above.
 - Code that relies on repeated labels, or on the version 1.0 order of the Case-3 columns, must be adapted.
+
+## Removed files
+
+Two stray files of version 1.0 are removed from `paper_results/`: `case14.m_apfc.csv` (a byte-identical copy of `case14_apfc.csv`) and `case1a_rpfc.csv` (no matching case file). Both remain in the archived version 1.0.
