@@ -1,0 +1,15 @@
+# Environment of the export (written by benchmark/export_inputs.sh)
+date_utc: 2026-11-15T11:29:21Z
+octave: GNU Octave (aarch64-apple-darwin25.2.0) version 11.1.0
+matpower: MATPOWER Version 7.1 08-Oct-2020
+python3: /Users/mirko/.pyenv/shims/python3 Python 3.10.16
+numpy: 2.2.6
+pandas: 2.2.3
+scipy: 1.13.1
+networkx: 3.4.2
+matplotlib: 3.10.1
+macos: 27.0.1 (build 26A434)
+cpu: Apple M2
+cores (hw.ncpu / physical / logical): 8 / 8 / 8
+iterative-method submodule commit: 7d4cd364f81598d128e6e4b4c8666ed020375928
+matrix commit: 847f1bb540d988a4462a2f77928974a3bca24603 (working tree dirty: 1)

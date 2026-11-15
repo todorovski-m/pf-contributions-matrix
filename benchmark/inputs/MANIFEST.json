@@ -1,0 +1,93 @@
+{
+  "description": "Canonical benchmark inputs: results/results.mat written by my_runpf.m of the iterative method, one file per case.",
+  "iterative_method_submodule_commit": "7d4cd364f81598d128e6e4b4c8666ed020375928",
+  "matrix_commit": "847f1bb540d988a4462a2f77928974a3bca24603",
+  "matrix_working_tree_dirty": true,
+  "date_utc": "2026-11-15T11:29:21Z",
+  "ignored_variables": [
+    "et"
+  ],
+  "note": "n_branch counts the branches in the exported file, after the deletion done by my_runpf.m. mat_sha256 changes on every export (Octave writes the time into the MAT-file header, and 'et' is an elapsed time); content_sha256_excluding_et is reproducible.",
+  "cases": {
+    "case1": {
+      "case_file": "external/iterative-method/case1.m",
+      "case_file_sha256": "c26c6daa32dba81a583b27f5d17fb8b9886a7514445dca67c09a5a2533330e60",
+      "mat_file": "case1.mat",
+      "mat_sha256": "fb3e07d4f083ea6bf2483053a41e3f8b1c12b18b390bfbd6a6bfbe11f87a8d8b",
+      "content_sha256_excluding_et": "67132dbd7a8954cfaa6005d30a8fe48cfb5fc4ad0012057604aa49bce0d424fa",
+      "n_bus": 3,
+      "n_branch": 3,
+      "n_gen": 2
+    },
+    "case9": {
+      "case_file": "external/iterative-method/case9.m",
+      "case_file_sha256": "e21722908aca0c705b5c6a762086810728505a0a776d5023de0ef99ea840e071",
+      "mat_file": "case9.mat",
+      "mat_sha256": "f3abab9058bbb0d8e21714507d93cc96b70e40139991003958c90e9f0f641b9b",
+      "content_sha256_excluding_et": "f94b7872e89888c014e302598e90d3a6efe51cc93195930be3d2d676900c6099",
+      "n_bus": 9,
+      "n_branch": 9,
+      "n_gen": 3
+    },
+    "case14": {
+      "case_file": "external/iterative-method/case14.m",
+      "case_file_sha256": "abb9fddb2141a02047f9b69a617f856fe6cbc6f358ded8a3483f9648eb7428df",
+      "mat_file": "case14.mat",
+      "mat_sha256": "ff3c41698e978cd30a9dc6fbbe3aec787c06f7ec1905b10779144cfe59e59444",
+      "content_sha256_excluding_et": "121013a9316c40bbaf87b404be78042c7327ec3acb54471c8e52db4143e13935",
+      "n_bus": 14,
+      "n_branch": 20,
+      "n_gen": 5
+    },
+    "case24_ieee_rts": {
+      "case_file": "external/iterative-method/case24_ieee_rts.m",
+      "case_file_sha256": "a460dc716cce31f4e4270b630d75dcf5ffd73cfc19e000f859a22602d8463953",
+      "mat_file": "case24_ieee_rts.mat",
+      "mat_sha256": "904e5699be1f581c7b10f28e8fde0d8c3dad3a3491afa21e263bd3ef3bdae2b5",
+      "content_sha256_excluding_et": "0d09c093b03bd4258ace906775decbf6a1d448e4bef82b2816db84017c1d8bb2",
+      "n_bus": 24,
+      "n_branch": 38,
+      "n_gen": 33
+    },
+    "case30": {
+      "case_file": "external/iterative-method/case30.m",
+      "case_file_sha256": "ead14ce315d2d05d37a18ac678fa25f0e4418c9bdf37fb33551fd20f369b4e8c",
+      "mat_file": "case30.mat",
+      "mat_sha256": "5ad899462afcd39d98ad9dd0b2ebf2af097e680c10bdb2d42f780c95103226fe",
+      "content_sha256_excluding_et": "cfc012ec379121c11f25e3664221da31b90fd7baffe9cbe7558afd6f1161bc6e",
+      "n_bus": 30,
+      "n_branch": 40,
+      "n_gen": 6
+    },
+    "case33": {
+      "case_file": "external/iterative-method/case33.m",
+      "case_file_sha256": "4d5cb4b2cf0b562d776a6fd98a6379eabdcd23f953c00eae1450a44eeed99ccb",
+      "mat_file": "case33.mat",
+      "mat_sha256": "6dc312d0cc96d58afd492797ed67f770318d320a3cf7bfdc98f1ba0c1febb47c",
+      "content_sha256_excluding_et": "f9ca16801e86c63c3f30e0e846faa70ea5ae5235f193b269356bef40835c4bce",
+      "n_bus": 33,
+      "n_branch": 32,
+      "n_gen": 4
+    },
+    "case118": {
+      "case_file": "external/iterative-method/case118.m",
+      "case_file_sha256": "bc2e6f22b4b9e776572885ee4b50e4f4ab2ee0c5577e9126e86d906f14c4b5f7",
+      "mat_file": "case118.mat",
+      "mat_sha256": "98961d99b8625479350efe505353ae86a1f6828613048517d1e3cc6ccd080b56",
+      "content_sha256_excluding_et": "3933715a3a48c84a05df543948348487d18c1398b6e1c44e08091e587461ea28",
+      "n_bus": 118,
+      "n_branch": 186,
+      "n_gen": 54
+    },
+    "tap_loop": {
+      "case_file": "cases/tap_loop.m",
+      "case_file_sha256": "a3faf88387659017d0ad3106a84d8c77651ac6a80c594b66134babc5081f07f5",
+      "mat_file": "tap_loop.mat",
+      "mat_sha256": "805db27029e42eee351a6e7fe8959c750fe462f7054874877b61148ca45564cf",
+      "content_sha256_excluding_et": "11544f91fc2f39151d27551299b3904dde2d88a90f3efe86f792e4150791a243",
+      "n_bus": 2,
+      "n_branch": 2,
+      "n_gen": 1
+    }
+  }
+}
