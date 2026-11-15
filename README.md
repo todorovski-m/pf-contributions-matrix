@@ -81,11 +81,11 @@ Standard MATPOWER test networks:
 - **`case118.m`**: IEEE 118-bus system
 - **`tap_loop.m`**: Parallel transformers with a reactive circulating flow
 
-Synthetic variants of case9 (negative active and reactive demand and generation) are in `tests/cases_synthetic/`.
+Synthetic variants of case9 are in `tests/cases_synthetic/`: negative active and reactive demand and generation, and a Case-3 branch with an inductive shunt (`syn9_case3_tap`).
 
 ### Results
 
-- **`paper_results/`**: the outputs of version 1.0, kept unchanged. See `RELEASE_NOTES_v2.0.md` for the differences of version 2.0.
+- **`paper_results/`**: the unchanged outputs of the archived version 1.0, including its known labelling defect (the Case-3 source columns of `case9_rpfc.csv` and `case118_rpfc.csv` are named in a different order from their data). `reference_results/` supersedes it; see `RELEASE_NOTES_v2.0.md` for all differences.
 - **`reference_results/`**: the outputs of version 2.0 for the six shared cases (case1, case9, case14, case30, case33, case118) and `tap_loop`. They were written by `tests/make_reference.sh` under Octave, with 15 significant digits in the format of Matlab's `writetable` (C format `%.15g`, negative zero as `-0`). Matlab writes the same format. Its values agree with the Octave values to about 1e-11 (for the version 1.0 code, the largest difference between the Matlab files in `paper_results/` and the Octave results was below 1e-11), so individual last digits, and values near zero (rounding noise below 1e-13), can differ.
 - **`results/`**: the output folder of `apfc`, `rpfc` and `batch_solve` (not tracked).
 
