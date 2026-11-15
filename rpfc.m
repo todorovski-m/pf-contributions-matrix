@@ -155,9 +155,12 @@ src_bus_qs = mpc.bus(i_qs_pos, BUS_I);
 Qs_src     = Qsh(i_qs_pos);
 n_qs       = numel(Qs_src);
 
-% Case 3 end-injections
-src_bus = [src_bus_g;       src_bus_qs;  case3_fbus; case3_tbus];
-Qsrc    = [Qg_src;          Qs_src;      case3_QF;   case3_QT  ];
+% Case 3 end-injections, interleaved per branch: [f_1; t_1; f_2; t_2; ...],
+% the same order as the column names (E_i_j_f, E_i_j_t) and the appended rows
+case3_bus = reshape([case3_fbus, case3_tbus].', [], 1);
+case3_Q   = reshape([case3_QF,   case3_QT  ].', [], 1);
+src_bus = [src_bus_g;       src_bus_qs;  case3_bus];
+Qsrc    = [Qg_src;          Qs_src;      case3_Q  ];
 ns      = numel(Qsrc);
 
 %% Unified branch set
