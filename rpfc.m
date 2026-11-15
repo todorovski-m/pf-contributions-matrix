@@ -230,15 +230,15 @@ pfc_checks('inflow', Qtot, f, tol_div, 'rpfc');
 
 %% Build the system matrix and right-hand side, then solve.
 M   = Cf * Ct';
-N   = -diag(Qf .* hf) * (M * diag(aQ));
+N   = -spdiags(Qf .* hf, 0, ne, ne) * (M * spdiags(aQ, 0, ne, ne));
 A   = speye(ne) + N;
 
 % acyclicity of the reactive flow digraph and spectral radius of N^Q
 [acyclic, rho, w_cyc] = pfc_checks('cycle', N, M, 'rpfc');
 S   = Cf * Cs';
-B   = diag(Qf .* hf) * S * diag(Qsrc);
+B   = spdiags(Qf .* hf, 0, ne, ne) * S * spdiags(Qsrc, 0, ns, ns);
 RPFCf = A \ B;
-RPFCt = diag(aQ) * RPFCf;
+RPFCt = spdiags(aQ, 0, ne, ne) * RPFCf;
 
 %% Post-processing: shunt self-contributions.
 %  Compute branch to-end self terms and propagate them with the same
@@ -258,7 +258,7 @@ RPFCt_self = zeros(ne, nl);
 if n_self > 0
     Css      = sparse(1:n_self, t(i_self), 1, n_self, nb+1);
     Ss       = Cf * Css';
-    B_self = diag(Qf .* hf) * Ss * diag(self_toend(i_self));
+    B_self = spdiags(Qf .* hf, 0, ne, ne) * Ss * spdiags(self_toend(i_self), 0, n_self, n_self);
     sol      = A \ B_self;
     for k = 1:n_self
         ii = i_self(k);
@@ -390,7 +390,7 @@ info.warnings = [w_ser, w_cyc];
 info.opts = opts;
 
 %% Output table
-RPFC_tbl = array2table(RPFC_data, 'VariableNames', all_names);
+RPFC_tbl = array2table(full(RPFC_data), 'VariableNames', all_names);   % full only for the table
 RPFC_tbl = addvars(RPFC_tbl, row_labels, 'Before', 1, 'NewVariableNames', 'Line');
 
 if opts.write && ~isempty(name)

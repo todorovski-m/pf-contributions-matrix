@@ -136,10 +136,10 @@ hf = h(f);
 
 % Compute the contribution matrix N:
 % each element N(i,j) = - Pf(i) * h(from_bus_i) * a(j) * M(i,j)
-N = -diag(Pf .* hf) * M * diag(a);
+N = -spdiags(Pf .* hf, 0, ne, ne) * M * spdiags(a, 0, ne, ne);
 
 % APFC system matrix: A = I + N
-A = eye(ne) + N;
+A = speye(ne) + N;
 
 % acyclicity of the flow digraph and spectral radius of N
 [acyclic, rho, w_cyc] = pfc_checks('cycle', N, M, 'apfc');
@@ -148,7 +148,7 @@ A = eye(ne) + N;
 %  Each generator contributes only to branches that originate at its bus.
 %  B(ell, k) = Pf(ell) * h(f(ell)) * Pg(k) if f(ell) = g_bus(k), else 0
 S = Cf * Cg'; % maps generators to outgoing branches (ne x ng)
-B = diag(Pf .* hf) * S * diag(Pg); % (ne x ng)
+B = spdiags(Pf .* hf, 0, ne, ne) * S * spdiags(Pg, 0, ng, ng); % (ne x ng), sparse
 
 %% Solve contribution system
 %  APFC_tbl = contributions at "from" side of each branch
@@ -223,7 +223,7 @@ info.warnings = [w_att, w_cyc];
 info.opts = opts;
 
 %% Output table
-APFC_tbl = array2table(APFC_tbl, 'VariableNames', gen_names);
+APFC_tbl = array2table(full(APFC_tbl), 'VariableNames', gen_names);   % full only for the table
 APFC_tbl = addvars(APFC_tbl, line_names, 'Before', 1, 'NewVariableNames', 'Line');
 
 if opts.write && ~isempty(name)
