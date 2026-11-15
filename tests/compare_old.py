@@ -24,6 +24,10 @@ Row mapping (old in-memory row -> matrix row):
     rows of type G (sources) have no matrix row.
 Column mapping: G<b> -> G_<b>; S<b> -> S_<b>; L<b> (negative demand as a source) -> D_<b>;
     E<k> (rpfc) -> sum of E_F_T_s[_n], E_F_T_f and E_F_T_t of the same branch.
+Several generators at one bus: the old code names them G<b>.1, G<b>.2, ... (replaceDuplicates), the
+matrix code G_<b>, G_<b>_2, ... (unique_labels). Both are reduced to the base name and paired by order
+of appearance, for columns and for rows. Matrix demand-row labels with a uniqueness suffix
+(C2_<b>_2, Tf_<b>_2, ...) are matched the same way.
 Row sums: the matrix row sum is compared with the flow of the mapped old row (Total - Error).
 
 The mapping follows reports/T0_scripts/d_compare.py of the T0 analysis, adapted to the in-memory tables.
@@ -37,7 +41,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 SUB = os.path.join(ROOT, "external", "iterative-method")
 TOL = 1e-10
 ITERMAX = 10000
-DEFAULT_CASES = ["case1", "case9", "case14", "case30", "case33", "case118", "tap_loop",
+DEFAULT_CASES = ["case1", "case9", "case14", "case24_ieee_rts", "case30", "case33", "case118", "tap_loop",
                  "syn9_neg_pd", "syn9_neg_pg", "syn9_neg_qd", "syn9_neg_qg"]
 g = lambda x: f"{x:.17g}"
 
@@ -88,11 +92,13 @@ def matrix_keys(labels, kind):
     c2 = [i for i, l in enumerate(lab) if l.startswith("C2_")]
     for n, i in enumerate(c2):
         lab[i] = ("C2f_" if n < len(c2) // 2 else "C2t_") + lab[i][3:]
-    base = []
-    for l in lab:
-        m = re.fullmatch(r"(L_\{[ft]\.\d+-\d+\})_\d+", l)
-        base.append(m.group(1) if m else l)
-    return occ(base)
+    return occ([base_label(l) for l in lab])
+
+
+def base_label(l):
+    """Remove a uniqueness suffix _n from a matrix row label or column name."""
+    m = re.fullmatch(r"(L_\{[ft]\.\d+-\d+\}|(?:G|D|S|Bs|Tf|Tt|C2|C2f|C2t)_\d+)_\d+", l)
+    return m.group(1) if m else l
 
 
 def old_row_key(idx, r, kind, branch_from):
@@ -119,6 +125,13 @@ def old_row_key(idx, r, kind, branch_from):
 
 def colmap(old_cols, mcols, kind, fq):
     cm, unm = {}, []
+    # source columns of generators, shunts and negative demands: pair by base name and order of appearance
+    mocc = occ([base_label(x) for x in mcols]); mpos = {k: mcols[i] for i, k in enumerate(mocc)}
+    obase = []
+    for oc in old_cols:
+        m = re.fullmatch(r"([GSL])(\d+)(?:\.\d+)?", oc)
+        obase.append({"G": "G_", "S": "S_", "L": "D_"}[m.group(1)] + m.group(2) if m else None)
+    oocc = occ(obase)
     if kind == "rpfc":
         E = fq[fq.TYPE == "E"]
         keys = {}
@@ -127,10 +140,9 @@ def colmap(old_cols, mcols, kind, fq):
             ft = (int(r.F_BUS), int(r.T_BUS)); case3 = r.QF < 0 and r.QT > 0
             if not case3: cnt[ft] += 1
             keys[i] = (ft, cnt[ft] if not case3 else 1, case3)
-    for oc in old_cols:
-        m = re.fullmatch(r"([GSL])(\d+)", oc)
-        if m:
-            cand = [{"G": "G_", "S": "S_", "L": "D_"}[m.group(1)] + m.group(2)]
+    for oc, key in zip(old_cols, oocc):
+        if key[0] is not None:
+            cand = [mpos[key]] if key in mpos else []
         elif kind == "rpfc" and re.fullmatch(r"E\d+", oc) and oc in keys:
             (f, t), n, _ = keys[oc]
             cand = [f"E_{f}_{t}_s" + ("" if n == 1 else f"_{n}"), f"E_{f}_{t}_f", f"E_{f}_{t}_t"]

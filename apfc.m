@@ -27,6 +27,8 @@ function [APFC_tbl, mpc, info] = apfc(casedata, opts)
 %   Source columns: G_b (generators with PG > 0), then D_b (buses with
 %   negative active demand). Rows: D_b (demands), G_b (generators with
 %   negative output), then the from-ends and the to-ends of the branches.
+%   Labels are unique: a repeated label gets the suffix _2, _3, ... (for
+%   example several generators at bus 22: G_22, G_22_2, G_22_3).
 %
 %   Output APFC_TBL is a table with contribution values and line labels.
 %   MPC is the modified MATPOWER case after preprocessing.
@@ -196,6 +198,12 @@ for i = 1:nl
     end
 end
 
+% Unique labels: several generators at one bus give G_b, G_b_2, G_b_3, ...
+% (columns, and rows of generators with negative output); the final pass
+% leaves already unique labels unchanged.
+gen_names = unique_labels(gen_names);
+line_names = unique_labels(line_names);
+
 %% Diagnostics
 info = struct();
 info.case = name;
@@ -260,6 +268,31 @@ else
     mpc = runpf(mpc, mpoption('verbose', 0, 'out.all', 0));
     if ~mpc.success
         error('pfc:runpf:notConverged', 'The MATPOWER power flow did not converge.');
+    end
+end
+end
+
+function lab = unique_labels(lab)
+%UNIQUE_LABELS  Make labels unique: the second and later occurrences of a
+%   label get the suffix _2, _3, ... (the scheme of the parallel-branch rows).
+%   A suffix is skipped if the resulting label is already in use.
+seen = containers.Map('KeyType', 'char', 'ValueType', 'int32');
+used = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+for i = 1:numel(lab)
+    used(lab{i}) = true;
+end
+for i = 1:numel(lab)
+    nm = lab{i};
+    if isKey(seen, nm)
+        k = seen(nm) + 1;
+        while isKey(used, sprintf('%s_%d', nm, k))
+            k = k + 1;
+        end
+        seen(nm) = k;
+        lab{i} = sprintf('%s_%d', nm, k);
+        used(lab{i}) = true;
+    else
+        seen(nm) = 1;
     end
 end
 end

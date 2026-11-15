@@ -5,7 +5,7 @@
 # Usage (from the root of the matrix repository):
 #     zsh tests/run_matrix.sh <output dir> [case ...]
 # Cases are looked up in cases/ and tests/cases_synthetic/. Default case list: the six
-# shared cases, tap_loop and all synthetic cases.
+# shared cases, case24_ieee_rts, tap_loop and all synthetic cases.
 
 setopt ERR_EXIT NO_UNSET PIPE_FAIL
 fail() { print -u2 "run_matrix.sh: ERROR: $*"; exit 1 }
@@ -14,7 +14,7 @@ fail() { print -u2 "run_matrix.sh: ERROR: $*"; exit 1 }
 OUT=$1; shift
 CASES=("$@")
 if (( ${#CASES} == 0 )); then
-  CASES=(case1 case9 case14 case30 case33 case118 tap_loop)
+  CASES=(case1 case9 case14 case24_ieee_rts case30 case33 case118 tap_loop)
   for f in tests/cases_synthetic/*.m(N); do CASES+=(${f:t:r}); done
 fi
 mkdir -p $OUT

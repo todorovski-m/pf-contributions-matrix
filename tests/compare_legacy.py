@@ -11,7 +11,7 @@ are named in interleaved order while the data are stored as all from-ends follow
 Before comparing, the committed files are relabelled to the true identity of each column
 (function relabel_case3, adapted from reports/T0_scripts/d_compare.py of the T0 analysis).
 The appended rows of those branches (last 2*n3 rows) were written with the interleaved names, so
-they keep their names.
+they keep their names. Uniqueness suffixes of the current code are removed before matching (base()).
 
 Expected differences (acceptance 2 of brief T12a): parallel-branch labels in apfc; the column names
 and order in case9 and case118 rpfc (removed by the relabelling); in case14 rpfc, the cells listed in
@@ -40,7 +40,9 @@ def relabel_case3(M):
 
 
 def base(label):
-    m = re.fullmatch(r"(L_\{[ft]\.\d+-\d+\})_\d+", label)
+    """Remove the uniqueness suffixes _2, _3, ... of the current code (parallel branches, generators at one
+    bus, demand rows C2_, Tf_, Tt_, G_, Bs_ at one bus); paper_results/ has none."""
+    m = re.fullmatch(r"(L_\{[ft]\.\d+-\d+\}|(?:G|D|S|Bs|Tf|Tt|C2)_\d+)_\d+", label)
     return m.group(1) if m else label
 
 
@@ -55,7 +57,10 @@ def compare(new, ref):
     """Return (rows only in new, rows only in ref, cols only in new, cols only in ref, list of cell diffs, max abs diff, n cells)."""
     kn, kr = keyed(list(new.Line)), keyed(list(ref.Line))
     pn = {k: i for i, k in enumerate(kn)}; pr = {k: i for i, k in enumerate(kr)}
-    cn, cr = list(new.columns[1:]), list(ref.columns[1:])
+    # columns: by base name and order of appearance (generator columns G_b, G_b_2, ... of the current code)
+    cn = [f"{b}#{k}" for b, k in keyed(list(new.columns[1:]))]
+    cr = [f"{b}#{k}" for b, k in keyed(list(ref.columns[1:]))]
+    new = new.set_axis(["Line"] + cn, axis=1); ref = ref.set_axis(["Line"] + cr, axis=1)
     common_c = [c for c in cn if c in cr]
     diffs, mx, n = [], 0.0, 0
     for k in kn:
@@ -63,9 +68,9 @@ def compare(new, ref):
         a, b = new.iloc[pn[k]], ref.iloc[pr[k]]
         for c in common_c:
             d = abs(float(a[c]) - float(b[c])); n += 1; mx = max(mx, d)
-            if d > TOL: diffs.append((k, c, float(a[c]), float(b[c]), d))
+            if d > TOL: diffs.append((k, c.split("#")[0], float(a[c]), float(b[c]), d))
     return ([k for k in kn if k not in pr], [k for k in kr if k not in pn],
-            [c for c in cn if c not in cr], [c for c in cr if c not in cn], diffs, mx, n,
+            [c.split("#")[0] for c in cn if c not in cr], [c.split("#")[0] for c in cr if c not in cn], diffs, mx, n,
             [(k, new.iloc[pn[k]].Line, ref.iloc[pr[k]].Line) for k in kn if k in pr and new.iloc[pn[k]].Line != ref.iloc[pr[k]].Line])
 
 
