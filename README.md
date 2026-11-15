@@ -1,24 +1,29 @@
 # Active Power Flow Components (APFC) and Reactive Power Flow Components (RPFC)
 
-MATLAB implementation of matrix-based power flow contribution methods.
+MATLAB implementation of matrix-based power flow contribution methods (version 2.0).
 
 ## Overview
 
-This package provides efficient matrix-based algorithms for decomposing active and reactive power flows in power networks into contributions from individual generators and reactive sources. The methods use a proportional-sharing principle and can handle complex topologies including meshed networks, transformers with tap ratios, and circulating power flows.
+This package provides matrix-based algorithms for decomposing active and reactive power flows in power networks into contributions from individual generators and reactive sources. The methods use a proportional-sharing principle and handle meshed networks, transformers with tap ratios, shunt elements, and reactive circulating flows.
 
 **Key Features:**
 
 - **APFC (Active Power Flow Components)**: Allocates active power flows to generators
 - **RPFC (Reactive Power Flow Components)**: Allocates reactive power flows to generators and reactive sources
-- **Matrix Formulation**: Efficient computation of all generator contributions via a single LU factorization
+- **Matrix Formulation**: All source contributions follow from one linear system, solved with a single factorization for all right-hand sides
 - **Branch-Level Resolution**: Separates from-end and to-end contributions for every branch
-- **Shunt Handling**: Correctly attributes line-charging capacitances and bus-mounted capacitor banks
-- **Circulating Flow Support**: Handles reactive circulating flows via Neumann-series convergence analysis
+- **Shunt Handling**: Attributes line-charging capacitances, transformer tap-model shunts and bus-mounted capacitor banks
+- **Circulating Flow Support**: Reactive circulating flows lead to a cyclic flow digraph; the system is solved as long as the spectral radius of the propagation matrix is below 1, which is checked
+- **Validity Checks and Diagnostics**: Acyclicity, spectral radius, attenuation range and inflow guards, with a diagnostics output (`diag`)
 
 ## Requirements
 
 - **MATLAB** (R2018b or later)
-- **MATPOWER** (tested with version 7.0+)
+- **MATPOWER** (version 7.x)
+
+**Octave.** The code also runs in GNU Octave, which lacks the Matlab table functions `array2table`, `addvars` and `writetable`. The folder `tests/octave_shims/` contains minimal stand-ins for them. They are **for validation only**: they keep the data and the labels, and write CSV files with 17 significant digits.
+
+**What was run.** Version 2.0 was validated under Octave 11.1.0 with MATPOWER 7.1 and the stand-ins. **Nothing was run in Matlab.** `tests/matlab_check.m` is provided for a check in Matlab (see "Tests").
 
 ### Installation
 
@@ -35,48 +40,54 @@ This package provides efficient matrix-based algorithms for decomposing active a
    addpath('/path/to/code');
    ```
 
+3. Under Octave only, also add the stand-ins:
+
+   ```matlab
+   addpath('/path/to/code/tests/octave_shims');
+   ```
+
+4. The tests compare with the earlier iterative method, which is included as a git submodule. Clone with `git clone --recurse-submodules`, or run `git submodule update --init` in an existing clone.
+
 ## File Structure
 
 ### Core Functions
 
-- **`apfc.m`**: Main function for APFC computation
-  - Input: MATPOWER case file or case name
-  - Output: APFC contribution table and modified case structure
-  - Constructs demand-as-branches model with virtual sink bus
-  - Builds system matrix and solves for all generator contributions
+- **`apfc.m`**: APFC computation
+  - Input: a case name, a MATPOWER case struct, or a solved case struct (see "Options")
+  - Output: APFC contribution table, the preprocessed case struct, and the diagnostics struct
+  - Constructs the demand-as-branches model with a virtual sink bus
+  - Builds the system matrix and solves for all source contributions
 
-- **`rpfc.m`**: Main function for RPFC computation
-  - Input: MATPOWER case file or case name
-  - Output: RPFC contribution table and modified case structure
-  - Classifies branches into three reactive cases based on flow signs
-  - Computes series and shunt flow components
-  - Handles circulating reactive flows via cycle product verification
+- **`rpfc.m`**: RPFC computation
+  - Input and output as for `apfc.m`
+  - Classifies branches into three reactive cases based on the signs of the terminal flows
+  - Computes series and shunt flow components and the shunt self-contributions
+  - Handles reactive circulating flows; the spectral radius of the propagation matrix is checked
 
-- **`batch_solve.m`**: Batch processing script
-  - Runs both APFC and RPFC on multiple test cases
-  - Generates CSV output files for verification
+- **`pfc_checks.m`**: options and validity checks used by both functions (see "Validity Checks")
+
+- **`batch_solve.m`**: runs APFC and RPFC on the test cases and writes the CSV files to `results/`
 
 ### Test Cases (`cases/` directory)
 
 Standard MATPOWER test networks:
 
 - **`case1.m`**: Three-bus system (verification example)
-- **`case9.m`**: IEEE 9-bus system (radial/meshed topology)
-- **`case14.m`**: IEEE 14-bus system (small network)
+- **`case9.m`**: IEEE 9-bus system
+- **`case14.m`**: IEEE 14-bus system
+- **`case24_ieee_rts.m`**: IEEE RTS 24-bus system (several generators at one bus)
 - **`case30.m`**: IEEE 30-bus system (transformers and capacitor banks)
-- **`case33.m`**: IEEE 33-bus system (distribution network)
-- **`case118.m`**: IEEE 118-bus system (large transmission network)
-- **`tap_loop.m`**: Parallel transformers with circulating reactive flow example
+- **`case33.m`**: 33-bus distribution network
+- **`case118.m`**: IEEE 118-bus system
+- **`tap_loop.m`**: Parallel transformers with a reactive circulating flow
+
+Synthetic variants of case9 (negative active and reactive demand and generation) are in `tests/cases_synthetic/`.
 
 ### Results
 
-- **`paper_results/`**: Reference results from the paper
-  - Format: `case{N}_{apfc|rpfc}.csv`
-  - Contains contribution matrices for validation
-
-- **`results/`**: Output directory for computed results
-  - Generated by running `batch_solve.m`
-  - Format matches reference results for comparison
+- **`paper_results/`**: the outputs of version 1.0, kept unchanged. See `RELEASE_NOTES_v2.0.md` for the differences of version 2.0.
+- **`reference_results/`**: the outputs of version 2.0 for the six shared cases (case1, case9, case14, case30, case33, case118) and `tap_loop`. They were written by `tests/make_reference.sh` under Octave, with 15 significant digits in the format of Matlab's `writetable` (C format `%.15g`, negative zero as `-0`). Matlab writes the same format. Its values agree with the Octave values to about 1e-11 (for the version 1.0 code, the largest difference between the Matlab files in `paper_results/` and the Octave results was below 1e-11), so individual last digits, and values near zero (rounding noise below 1e-13), can differ.
+- **`results/`**: the output folder of `apfc`, `rpfc` and `batch_solve` (not tracked).
 
 ## Usage
 
@@ -85,13 +96,22 @@ Standard MATPOWER test networks:
 #### Compute APFC for a single case
 
 ```matlab
-[APFC_tbl, mpc] = apfc('cases/case1');
+[APFC_tbl, mpc, diag] = apfc('cases/case1');
 ```
 
 #### Compute RPFC for a single case
 
 ```matlab
-[RPFC_tbl, mpc] = rpfc('cases/case1');
+[RPFC_tbl, mpc, diag] = rpfc('cases/case1');
+```
+
+#### Reuse one power flow for both functions
+
+```matlab
+r = runpf(loadcase('cases/case9'), mpoption('verbose', 0, 'out.all', 0));
+opts = struct('solved', true, 'name', 'cases/case9');
+[APFC_tbl, ~, dA] = apfc(r, opts);
+[RPFC_tbl, ~, dR] = rpfc(r, opts);
 ```
 
 #### Run batch computation
@@ -100,36 +120,136 @@ Standard MATPOWER test networks:
 batch_solve;
 ```
 
+### Options
+
+`apfc(casedata, opts)` and `rpfc(casedata, opts)` accept an optional struct `opts`. Unknown fields are an error.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `tol` | 1e-6 | Threshold for deletion and classification decisions, in the units of the case (MW, Mvar): removal of zero-flow branches and zero-output generators, and the sign tests of demands, generators, bus shunts and inductive branch shunts. |
+| `tol_div` | 1e-9 | Used for three purposes: (1) the guards against division by a near-zero value (the series flow at the from-end before the self-contribution of a branch is computed, and the total inflow of a bus with an outgoing branch, see "Validity Checks"); (2) the threshold below which a branch shunt self-contribution is neglected; (3) the slack of the upper bound of the active attenuation, 1 + `tol_div`. |
+| `write` | true | Write `results/<case>_apfc.csv` or `results/<case>_rpfc.csv`. A struct input writes a file only if `name` is given. |
+| `solved` | false | `casedata` is a struct that already holds a solved power flow (for example the output of `runpf`); `runpf` is not called. |
+| `name` | `''` | Case name for the output file when `casedata` is a struct. |
+
+`casedata` is a case name, an unsolved MATPOWER case struct (it is solved with `runpf`), or, with `solved = true`, a solved struct. A power flow that does not converge is an error.
+
+### Diagnostics (`diag`)
+
+| Field | Meaning |
+|---|---|
+| `case` | case name (empty for a struct without `name`) |
+| `n_bus`, `n_branch`, `n_demand`, `n_source`, `n_e` | numbers of buses, physical branches (after preprocessing), demand branches, source columns, and branches of the expanded network |
+| `nnz_N`, `nnz_A` | non-zeros of the propagation matrix N and the system matrix A = I + N |
+| `issparse` | struct with `N`, `A`, `B`: whether the matrices are sparse |
+| `condest_A` | estimate of the 1-norm condition number of A (`condest`) |
+| `attenuation_range` | smallest and largest attenuation factor of the physical branches |
+| `removed` | numbers of removed branches and generators |
+| `flipped_branches` | number of branches whose orientation was reversed |
+| `converted` | numbers of converted elements (negative demand to source, negative generation to demand; in `rpfc` also inductive bus shunts, Case-2 and Case-3 branches, inductive transformer shunts) |
+| `acyclic`, `spectral_radius` | acyclicity of the flow digraph (Kahn's topological sort) and the spectral radius of N (exactly 0 for an acyclic digraph) |
+| `warnings` | identifiers of the warnings issued |
+| `negative_series_flow` | `rpfc` only: `count` and `branches` (index in the returned `mpc.branch` and bus pair) of the branches with a negative series flow |
+| `opts` | the options used |
+
 ### Output Format
 
 Both functions return tables with:
 
-- **Rows**: Network elements (branches with labels, loads, demands)
-- **Columns**: Generator/source contributions
+- **Rows**: demands first, then the from-ends and the to-ends of the branches; RPFC appends the rows of the Case-3 branches (their own terminal injections) at the end
+- **Columns**: source contributions
 - **Values**: Power contributions (MW for APFC, Mvar for RPFC)
 - **Row sums**: Match solved power flows (verification check)
 
-### Detailed Example
+## Preprocessing Rules
 
-```matlab
-% Add paths
-addpath('/path/to/matpower7.x');
-addpath(pwd);
+| Rule | APFC | RPFC |
+|---|---|---|
+| Tolerance | `opts.tol` (default 1e-6) | `opts.tol` (default 1e-6) |
+| Deletion (per quantity) | a branch is removed if both active terminal flows are below `tol` in magnitude; a generator if its active output is | a branch is removed if both reactive terminal flows are below `tol` in magnitude; a generator if its reactive output is |
+| Orientation | a branch with a negative from-end flow is reversed (sign test at exactly 0) | a branch with both terminal flows negative is reversed (sign tests at exactly 0) |
+| Demand | a bus with PD > `tol` is a demand (row `D_b`) | a bus with QD > `tol` is a demand (row `D_b`) |
+| Negative demand | a bus with PD < -`tol` is a source (column `D_b`) | a bus with QD < -`tol` is a source (column `D_b`) |
+| Negative generation | a generator with PG < -`tol` is a demand (row `G_b`) | a generator with QG < -`tol` is a demand (row `G_b`) |
+| Reactive branch cases (after orientation) | - | Case 1, both terminal flows positive: a carrier. Case 2, from-end positive and to-end negative (consumes at both ends): replaced by two demands (rows `C2_b` at both buses). Case 3, from-end negative and to-end positive (injects at both ends): removed from the carriers, its two terminal injections are sources (columns `E_i_j_f`, `E_i_j_t`). The tests use the signs at exactly 0. |
+| Bus shunts | - | Q = VM² · BS: a source (column `S_b`) if above `tol`, a demand (row `Bs_b`) if below -`tol` |
+| Branch shunts | - | The shunt flows at both ends follow from the series current. An inductive shunt (below -`tol`) is a demand (row `Tf_b` or `Tt_b`), except on a Case-2 branch, whose two terminal demands already contain its shunt power. Capacitive branch shunts give the self-contribution columns `E_i_j_s`. |
+| Attenuation | a = Pt / Pf | a = Qe / Qs, from the series flows (shunts removed) |
 
-% Run APFC
-[APFC_tbl, mpc] = apfc('cases/case9');
-disp('APFC Table:');
-disp(APFC_tbl);
+### Difference from the earlier iterative method
 
-% Run RPFC
-[RPFC_tbl, mpc] = rpfc('cases/case9');
-disp('RPFC Table:');
-disp(RPFC_tbl);
+The earlier iterative method (submodule `external/iterative-method`) prepares its input with `my_runpf.m`:
+- It removes a branch only when all four terminal flows (active and reactive) are below 1e-4.
+- It then sets every single flow below 1e-4 to zero.
 
-% Export to CSV
-writetable(APFC_tbl, 'case9_apfc_custom.csv');
-writetable(RPFC_tbl, 'case9_rpfc_custom.csv');
-```
+The matrix code differs in two ways:
+- It removes a branch per quantity, when both terminal flows of that quantity are below `opts.tol`.
+- It does not set single flows to zero; it decides the signs of the flows at exactly 0.
+
+In the six shared test cases (case1, case9, case14, case30, case33, case118), no flow has a magnitude between 1e-6 and 1e-4, so the two thresholds classify every flow in the same way. The only difference is the branch 7-8 of case14, which carries no active power: the matrix code removes it from the active network, while the iterative method keeps it with zero active flows. In all test cases, the contributions agree with the iterative method to 1e-10 (see "Tests and Validation").
+
+## Validity Checks
+
+The checks are in `pfc_checks.m` and use identifiers of the form `pfc:...`. They fall into three groups:
+
+| Group | Condition | Identifier |
+|---|---|---|
+| Error (results not valid) | cyclic active digraph with spectral radius of N at or above 1 | `pfc:apfc:spectralRadius` |
+| | cyclic reactive digraph with spectral radius of N at or above 1 (the sufficient condition for the Neumann series is not met) | `pfc:rpfc:spectralRadius` |
+| | active attenuation at or below 0 (a branch fed from both ends) | `pfc:apfc:nonPositiveAttenuation` |
+| | total inflow below `tol_div` at a bus with an outgoing branch | `pfc:apfc:zeroInflow`, `pfc:rpfc:zeroInflow` |
+| | invalid input, unknown option, unsolved or non-converged power flow | `pfc:options:...`, `pfc:input:...`, `pfc:runpf:notConverged` |
+| Warning (can invalidate the results) | cyclic active digraph with spectral radius below 1 | `pfc:apfc:cyclic` |
+| | active attenuation above 1 + `tol_div` | `pfc:apfc:attenuationAboveOne` |
+| Information (in `diag` only, not printed) | cyclic reactive digraph with spectral radius below 1 (a reactive circulating flow) | `diag.acyclic`, `diag.spectral_radius` |
+| | branches with a negative series flow (negative reactive attenuation) | `diag.negative_series_flow` |
+| | condition number estimate of A | `diag.condest_A` |
+
+What each check does:
+- **Acyclicity.** Kahn's topological sort on the pattern of the upstream adjacency matrix decides whether the flow digraph is acyclic. Acyclic means N is nilpotent, so the spectral radius is exactly 0.
+- **Spectral radius.** Only for a cyclic digraph: the largest absolute eigenvalue of N on its cyclic core, which is what remains after repeatedly removing branches without upstream or without downstream branches. `eig` is used up to 2000 core branches and `eigs` above.
+- **Attenuation range (active).** Every a = Pt / Pf must lie in (0, 1 + `tol_div`].
+- **Inflow guard.** The shares of the outgoing branches of a bus divide by its total inflow.
+- **Negative series flow (reactive).** Information only, see below.
+
+Not checked: a spectral radius close to (but below) 1, and a near-singular A. `diag.spectral_radius` and `diag.condest_A` report the values.
+
+## Negative Reactive Attenuation in Standard Cases
+
+Some branches carry positive reactive flow at both terminals, but the series element absorbs reactive power from both ends, so the series flow at the to-end is negative and the reactive attenuation Qe / Qs is negative. This occurs mainly on transformers with an off-nominal tap. Negative attenuation does not invalidate the results; the contributions agree with the earlier iterative method. But some contributions become negative. Generated by `python3 -B tests/negative_attenuation_table.py <rpfc outputs> benchmark/inputs`:
+
+| case | carrier branches with negative attenuation | of which transformers | most negative attenuation | negative contribution cells | smallest negative contribution (Mvar) |
+|---|---|---|---|---|---|
+| case1 | 0 | 0 | - | 0 | - |
+| case9 | 0 | 0 | - | 0 | - |
+| case14 | 2 | 1 | -2.012 | 249 | -5.792 |
+| case24_ieee_rts | 4 | 2 | -0.918 | 77 | -4.466 |
+| case30 | 0 | 0 | - | 0 | - |
+| case33 | 0 | 0 | - | 0 | - |
+| case118 | 12 | 8 | -4.708 | 1084 | -130.175 |
+| tap_loop | 1 | 1 | -0.327 | 4 | -1.658 |
+
+"Negative contribution cells" excludes the own terminal injection of a Case-3 branch in its own row, which is negative by design. The branches are listed in `diag.negative_series_flow`.
+
+## Row and Column Labels
+
+| Label | Kind | Meaning |
+|---|---|---|
+| `G_b` | column | generator at bus b with positive output |
+| `S_b` | column (RPFC) | bus shunt at bus b that injects reactive power |
+| `D_b` | column | bus b with negative demand, used as a source |
+| `E_i_j_f`, `E_i_j_t` | column (RPFC) | from-end and to-end injection of the Case-3 branch i-j |
+| `E_i_j_s` | column (RPFC) | shunt self-contribution of branch i-j |
+| `D_b` | row | demand at bus b |
+| `G_b` | row | generator at bus b with negative output (a demand) |
+| `Bs_b` | row (RPFC) | inductive bus shunt at bus b |
+| `C2_b` | row (RPFC) | terminal demand at bus b of a Case-2 branch |
+| `Tf_b`, `Tt_b` | row (RPFC) | inductive branch shunt at the from-end or to-end, at bus b |
+| `L_{f.i-j}`, `L_{t.i-j}` | row | from-end and to-end of branch i-j (after orientation) |
+
+`D_b` and `G_b` appear as rows and as columns. A row is a demand; a column is a source.
+
+**Suffixes.** A label that would repeat gets the suffix `_2`, `_3`, ... on its second and later occurrences. Examples: parallel branches (`L_{f.1-2}`, `L_{f.1-2}_2`, with the matching to-end rows); several generators at one bus (`G_22`, `G_22_2`, ...); two Case-2 branch ends at one bus (`C2_49`, `C2_49_2`). A suffix that would collide with an existing label is skipped.
 
 ## Key Results from Test Cases
 
@@ -201,45 +321,37 @@ RPFC result (Mvar):
 ### Case 118 (IEEE 118-Bus)
 
 - Large network with 54 generators and 186 branches
-- Tests computational efficiency: single LU factorization for all sources
-- Demonstrates advantage over iterative algorithms
+- One factorization of the system matrix serves all source columns
+- Contains carrier branches with negative reactive attenuation and negative contributions (see the table above)
+
+### Case 24 (IEEE RTS 24-Bus)
+
+- Several generators at one bus (unique column names `G_b`, `G_b_2`, ...)
+- Case-2 transformers with an inductive shunt (no `Tf`/`Tt` demand for them, see "Preprocessing Rules")
 
 ### Tap Loop (Circulating Flows)
 
-- Parallel transformers with tap mismatch ($\tau_A = 1.05$, $\tau_B = 0.95$)
-- Validates cycle product condition ($\gamma \approx 0.877 < 1$)
-- Shows correct handling of reactive circulation
+- Parallel transformers with a tap mismatch (taps 1.05 and 0.95)
+- The reactive flow digraph is cyclic: `diag.acyclic` is false and `diag.spectral_radius` is 0.17937561102916488 (below 1, so A is invertible by the Neumann series)
+- The earlier iterative method cannot resolve this case: each of the two buses waits for a contribution that only the other bus can provide, so no bus is ever processed
+- Transformer A has a negative series flow at its to-end (`diag.negative_series_flow`)
 
-## Validation
+## Tests and Validation
 
-The methods are validated by verifying that **row sums of contribution matrices match solved power flows**:
+The row sums of the contribution matrices match the solved power flows, at every from-end and to-end, in every test case. The tests check this and more. They run under Octave with MATPOWER, in scratch folders under `/tmp`. They need zsh, the submodule `external/iterative-method`, and Python 3 with numpy, pandas, scipy, networkx and matplotlib (for the earlier iterative method).
 
+```sh
+zsh tests/run_tests.sh            # all tests, one PASS or FAIL line each
+zsh tests/make_reference.sh       # regenerate reference_results/
 ```
-Row Sum Check: Σ_s Contribution_ℓ,s = Total_Flow_ℓ (within numerical precision)
-```
 
-This verification is performed for:
+`tests/run_tests.sh` runs:
+- the unit tests in `tests/unit/` (options and input forms, the checks with crafted inputs, and the diagnostics of all test cases);
+- the comparison with the earlier iterative method on in-memory results (cells and row sums within 1e-10);
+- the comparison with `paper_results/`, where only the documented differences of version 2.0 are allowed;
+- the regeneration of `reference_results/`, which must match the committed files byte for byte.
 
-- Active power at every from-end and to-end (APFC)
-- Reactive power at every from-end and to-end (RPFC)
-- All test cases from 3-bus to 118-bus networks
-
-## Notes on Branch Classification
-
-### Active Power (APFC)
-
-- All branches carry positive power (after orientation normalization)
-- Demand branches connect loads to virtual sink bus
-
-### Reactive Power (RPFC)
-
-Branch classification (before preprocessing):
-
-- **Case 1**: $Q_f > 0$, $Q_t > 0$ → normal carrier
-- **Case 2**: $Q_f > 0$, $Q_t < 0$ → split into demand at both ends
-- **Case 3**: $Q_f < 0$, $Q_t > 0$ → removed as pure source
-
-Negative shunts (inductive elements) are converted to auxiliary demand branches.
+**Matlab check.** In Matlab, from the root of the repository and without `tests/octave_shims` on the path, run `matlab_check('/some/output/folder')`. It runs both functions on case9, case118 and case24_ieee_rts, writes the CSV files with Matlab's `writetable`, and prints the label agreement and the maximum differences against the Octave results in `tests/octave_results/`. It has not been run, because Matlab was not available.
 
 ## Related Work
 
