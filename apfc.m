@@ -160,6 +160,20 @@ for i = 1:nl
     line_names{nd + nl + i}  = sprintf('L_{t.%d-%d}', f(i), t(i));
 end
 
+% Disambiguate duplicate row labels for parallel branches (same scheme as rpfc.m):
+% the second and later branches with the same orientation get the suffix _2, _3, ...
+seen_rows = containers.Map('KeyType','char','ValueType','int32');
+for i = 1:nl
+    nm = line_names{nd + i};
+    if isKey(seen_rows, nm)
+        seen_rows(nm) = seen_rows(nm) + 1;
+        line_names{nd + i}      = sprintf('%s_%d', nm, seen_rows(nm));
+        line_names{nd + nl + i} = sprintf('%s_%d', line_names{nd + nl + i}, seen_rows(nm));
+    else
+        seen_rows(nm) = 1;
+    end
+end
+
 APFC_tbl = array2table(APFC_tbl, 'VariableNames', gen_names);
 APFC_tbl = addvars(APFC_tbl, line_names, 'Before', 1, 'NewVariableNames', 'Line');
 
