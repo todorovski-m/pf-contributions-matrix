@@ -4,7 +4,7 @@
 % and it must not produce a warning.
 % Run with: zsh tests/octave_in_scratch.sh test_diag   (it copies tests/data/*.csv next to the tests)
 cases = {'case1', 'case9', 'case14', 'case24_ieee_rts', 'case30', 'case33', 'case118', 'tap_loop', ...
-         'syn9_neg_pd', 'syn9_neg_pg', 'syn9_neg_qd', 'syn9_neg_qg'};
+         'syn9_neg_pd', 'syn9_neg_pg', 'syn9_neg_qd', 'syn9_neg_qg', 'syn9_case3_tap'};
 % expected carrier sets
 fn = 'unit/negative_series_flow_carriers.csv';
 lines = strsplit(strtrim(fileread(fn)), sprintf('\n'));
@@ -19,7 +19,7 @@ for k = 2:numel(lines)
         v = expected(p{1}); v{end + 1} = [p{2} '-' p{3}]; expected(p{1}) = v;
     end
 end
-pfc_report('negative series flow: expected data cover all twelve cases', all(ismember(cases, covered)));
+pfc_report(sprintf('negative series flow: expected data cover all %d cases', numel(cases)), all(ismember(cases, covered)));
 warning('off', 'all');
 warning('on', 'pfc:rpfc:negativeSeriesFlow');   % must not appear
 fprintf('| case | function | n_e | nnz(N) | nnz(A) | issparse N, A, B | condest(A) | attenuation range | acyclic | spectral radius | warnings | negative series flow (count: branches) |\n');

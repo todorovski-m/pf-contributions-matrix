@@ -6,8 +6,8 @@ produced by `reports/T0_scripts/d_compare.py` with the Case-3 labels corrected).
 case `case14` are the cells that depend on the negative reactive demand at bus 4.
 `tests/compare_legacy.py` uses them as the set of expected differences against `paper_results/`.
 
-`negative_series_flow_carriers.csv`: for each of the twelve test cases (six shared cases,
-case24_ieee_rts, tap_loop and the four synthetic cases), the carrier branches with a negative series
+`negative_series_flow_carriers.csv`: for each of the thirteen test cases (six shared cases,
+case24_ieee_rts, tap_loop and the five synthetic cases), the carrier branches with a negative series
 reactive flow (negative reactive attenuation), as computed by the old iterative method (series flows
 `QF1`, `QT1` of `makeReactiveFlows` in the pinned submodule, branches that inject at both ends
 excluded, orientation after the old method's flip). Lines `case,from_bus,to_bus`; a line `case,,`

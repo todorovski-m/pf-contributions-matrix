@@ -45,7 +45,7 @@ SUB = os.path.join(ROOT, "external", "iterative-method")
 TOL = 1e-10
 ITERMAX = 10000
 DEFAULT_CASES = ["case1", "case9", "case14", "case24_ieee_rts", "case30", "case33", "case118", "tap_loop",
-                 "syn9_neg_pd", "syn9_neg_pg", "syn9_neg_qd", "syn9_neg_qg"]
+                 "syn9_neg_pd", "syn9_neg_pg", "syn9_neg_qd", "syn9_neg_qg", "syn9_case3_tap"]
 g = lambda x: f"{x:.17g}"
 
 
