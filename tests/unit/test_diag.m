@@ -1,7 +1,7 @@
 % diag output on the shared cases, tap_loop and the synthetic cases (brief T12b, acceptance 2).
 % Run with: zsh tests/octave_in_scratch.sh test_diag
 warning('off', 'all');
-cases = {'case1', 'case9', 'case14', 'case30', 'case33', 'case118', 'tap_loop', ...
+cases = {'case1', 'case9', 'case14', 'case24_ieee_rts', 'case30', 'case33', 'case118', 'tap_loop', ...
          'syn9_neg_pd', 'syn9_neg_pg', 'syn9_neg_qd', 'syn9_neg_qg'};
 fprintf('| case | function | n_e | nnz(N) | nnz(A) | issparse N, A, B | condest(A) | attenuation range | acyclic | spectral radius | warnings | negative series flow branches |\n');
 fprintf('|---|---|---|---|---|---|---|---|---|---|---|---|\n');
