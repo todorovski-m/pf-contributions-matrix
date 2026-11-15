@@ -21,6 +21,19 @@ function [RPFC_tbl, mpc] = rpfc(casedata)
 %   Shunt self-contributions at the to-end of each branch are computed in
 %   post-processing and propagated downstream by the same proportionality.
 %
+%   Conversions of negative injections (as in the iterative method):
+%     a generator with negative reactive output (QG < -tol) is a reactive
+%       demand (row G_b);
+%     a bus with negative reactive demand (QD < -tol) is a reactive source
+%       (column D_b);
+%     a bus shunt is a source if it injects (column S_b) and a demand if it
+%       absorbs (row Bs_b).
+%
+%   Source columns, in this order: G_b (generators with QG > tol), S_b
+%   (injecting bus shunts), D_b (buses with negative reactive demand),
+%   E_i_j_f and E_i_j_t (the two end injections of each Case-3 branch,
+%   interleaved per branch), then E_i_j_s (branch shunt self-contributions).
+%
 %   Output RPFC_TBL is a table with contribution values and branch labels.
 %   MPC is the modified MATPOWER case after power flow.
 %
@@ -31,6 +44,7 @@ if nargin < 1
 end
 
 define_constants;
+tol = 1e-6;   % threshold for the sign tests of injections (negative demand)
 opt = mpoption('verbose', 0, 'out.all', 0);
 mpc = loadcase(casedata);
 mpc = runpf(mpc, opt);
@@ -155,13 +169,20 @@ src_bus_qs = mpc.bus(i_qs_pos, BUS_I);
 Qs_src     = Qsh(i_qs_pos);
 n_qs       = numel(Qs_src);
 
+% Buses with negative reactive demand -> reactive sources (column D_b)
+i_qd_neg   = mpc.bus(:, QD) < -tol;
+src_bus_qd = mpc.bus(i_qd_neg, BUS_I);
+Qd_src     = -mpc.bus(i_qd_neg, QD);
+n_qd       = numel(Qd_src);
+
 % Case 3 end-injections, interleaved per branch: [f_1; t_1; f_2; t_2; ...],
 % the same order as the column names (E_i_j_f, E_i_j_t) and the appended rows
 case3_bus = reshape([case3_fbus, case3_tbus].', [], 1);
 case3_Q   = reshape([case3_QF,   case3_QT  ].', [], 1);
-src_bus = [src_bus_g;       src_bus_qs;  case3_bus];
-Qsrc    = [Qg_src;          Qs_src;      case3_Q  ];
+src_bus = [src_bus_g;       src_bus_qs;  src_bus_qd;  case3_bus];
+Qsrc    = [Qg_src;          Qs_src;      Qd_src;      case3_Q  ];
 ns      = numel(Qsrc);
+n_pre   = ng + n_qs + n_qd;   % number of source columns before the Case-3 columns
 
 %% Unified branch set
 ne = nl + nd;
@@ -235,9 +256,12 @@ end
 for i = 1:n_qs
     src_names{ng+i} = sprintf('S_%d', src_bus_qs(i));
 end
+for i = 1:n_qd
+    src_names{ng+n_qs+i} = sprintf('D_%d', src_bus_qd(i));
+end
 for i = 1:n_case3
-    src_names{ng+n_qs+2*i-1} = sprintf('E_%d_%d_f', case3_fbus(i), case3_tbus(i));
-    src_names{ng+n_qs+2*i  } = sprintf('E_%d_%d_t', case3_fbus(i), case3_tbus(i));
+    src_names{n_pre+2*i-1} = sprintf('E_%d_%d_f', case3_fbus(i), case3_tbus(i));
+    src_names{n_pre+2*i  } = sprintf('E_%d_%d_t', case3_fbus(i), case3_tbus(i));
 end
 self_names = arrayfun(@(i) sprintf('E_%d_%d_s', f(i), t(i)), ...
     (1:nl)', 'UniformOutput', false);
@@ -301,8 +325,8 @@ if n_case3 > 0
     c3f_data = zeros(n_case3, n_tot);
     c3t_data = zeros(n_case3, n_tot);
     for i = 1:n_case3
-        c3f_data(i, ng+n_qs+2*i-1) = -case3_QF(i);
-        c3t_data(i, ng+n_qs+2*i  ) =  case3_QT(i);
+        c3f_data(i, n_pre+2*i-1) = -case3_QF(i);
+        c3t_data(i, n_pre+2*i  ) =  case3_QT(i);
     end
     RPFC_data    = [RPFC_data;    c3f_data; c3t_data   ];
     row_labels = [row_labels; case3_flab; case3_tlab];

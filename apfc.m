@@ -6,6 +6,16 @@ function [APFC_tbl, mpc] = apfc(casedata)
 %   bus, builds the APFC allocation matrix, and computes generator
 %   contributions through each branch (including demand "branches").
 %
+%   Conversions of negative injections (as in the iterative method):
+%     a bus with negative active demand (PD < -tol) is an active source
+%       (column D_b);
+%     a generator with negative active output (PG < -tol) is an active
+%       demand (row G_b).
+%
+%   Source columns: G_b (generators with PG > 0), then D_b (buses with
+%   negative active demand). Rows: D_b (demands), G_b (generators with
+%   negative output), then the from-ends and the to-ends of the branches.
+%
 %   Output APFC_TBL is a table with contribution values and line labels.
 %   MPC is the modified MATPOWER case after preprocessing.
 %
@@ -16,6 +26,7 @@ if nargin < 1
 end
 
 define_constants;
+tol = 1e-6;   % threshold for the sign tests of injections (negative demand and generation)
 opt = mpoption('verbose', 0, 'out.all', 0);
 
 mpc = loadcase(casedata);
@@ -50,8 +61,14 @@ sink = nb + 1;          % index of virtual sink bus
 %% Demand-as-branches construction
 %  Each demand is converted to a branch whose "to" bus = sink
 i = mpc.bus(:, PD) > 0;
-d_bus = mpc.bus(i, BUS_I);   % buses with demand
-Pd = mpc.bus(i, PD);         % demand values
+d_bus_pd = mpc.bus(i, BUS_I);   % buses with demand
+Pd_load  = mpc.bus(i, PD);      % demand values
+% generators with negative output are demands (row G_b)
+i = mpc.gen(:, PG) < -tol;
+d_bus_pg = mpc.gen(i, GEN_BUS);
+Pd_pgneg = -mpc.gen(i, PG);
+d_bus = [d_bus_pd; d_bus_pg];
+Pd    = [Pd_load;  Pd_pgneg];
 nd = numel(Pd);              % number of demands
 
 %% Branch data (including appended demand branches)
@@ -66,10 +83,17 @@ t  = [mpc.branch(:, T_BUS); repmat(sink, nd, 1)];
 Pf = [mpc.branch(:, PF); Pd];
 Pt = [mpc.branch(:, PT); Pd];
 
-%% Generator data
-g_bus = mpc.gen(:, GEN_BUS);
-Pg    = mpc.gen(:, PG);
+%% Source data: generators with positive output, then buses with negative demand
+i = mpc.gen(:, PG) > tol;
+src_bus_g = mpc.gen(i, GEN_BUS);
+Pg_src    = mpc.gen(i, PG);
+i = mpc.bus(:, PD) < -tol;
+src_bus_pd = mpc.bus(i, BUS_I);
+Pd_src     = -mpc.bus(i, PD);
+g_bus = [src_bus_g; src_bus_pd];
+Pg    = [Pg_src;    Pd_src];
 ng    = numel(Pg);
+n_gpos = numel(Pg_src);
 
 %% Build incidence matrices
 %  Cf, Ct: branch → bus incidence
@@ -116,13 +140,20 @@ APFC_tbl = [APFC_tbl(nl+1:end,:); APFC_tbl(1:nl,:); APFCt(1:nl,:)];
 
 %% Build output table with readable labels
 gen_names = cell(1,ng);
-for i = 1:ng
+for i = 1:n_gpos
     gen_names{i} = sprintf('G_%i', g_bus(i));
+end
+for i = n_gpos+1:ng
+    gen_names{i} = sprintf('D_%i', g_bus(i));
 end
 
 line_names = cell(ne,1);
-for i = 1:nd
+nd_pd = numel(d_bus_pd);
+for i = 1:nd_pd
     line_names{i} = sprintf('D_%d', d_bus(i));
+end
+for i = nd_pd+1:nd
+    line_names{i} = sprintf('G_%d', d_bus(i));
 end
 for i = 1:nl
     line_names{nd + i}       = sprintf('L_{f.%d-%d}', f(i), t(i));
