@@ -222,10 +222,19 @@ Qtot = Ct' * Qt + Cs' * Qsrc;
 h    = 1 ./ Qtot;
 hf   = h(f);
 
+%% Validity checks (see pfc_checks.m)
+%  branch labels: index in the returned mpc.branch and the oriented bus pair
+br_labels = arrayfun(@(k) sprintf('%d (%d-%d)', k, f(k), t(k)), (1:nl)', 'UniformOutput', false);
+pfc_checks('inflow', Qtot, f, tol_div, 'rpfc');
+[w_ser, i_ser] = pfc_checks('series_flow', Qs(1:nl), Qe(1:nl), br_labels, tol);
+
 %% Build the system matrix and right-hand side, then solve.
 M   = Cf * Ct';
 N   = -diag(Qf .* hf) * (M * diag(aQ));
 A   = speye(ne) + N;
+
+% acyclicity of the reactive flow digraph and spectral radius of N^Q
+[acyclic, rho, w_cyc] = pfc_checks('cycle', N, M, 'rpfc');
 S   = Cf * Cs';
 B   = diag(Qf .* hf) * S * diag(Qsrc);
 RPFCf = A \ B;
@@ -374,6 +383,10 @@ info.converted = struct( ...
     'case3_branches_to_sources', n_case3, ...
     'inductive_from_end_shunt_to_demand', numel(extra_d_bus_qsf), ...
     'inductive_to_end_shunt_to_demand', numel(extra_d_bus_qst));
+info.acyclic = acyclic;
+info.spectral_radius = rho;
+info.negative_series_flow_branches = br_labels(i_ser).';
+info.warnings = [w_ser, w_cyc];
 info.opts = opts;
 
 %% Output table

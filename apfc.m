@@ -120,6 +120,12 @@ Ptot = Ct' * Pt + Cg' * Pg;
 h = 1 ./ Ptot;
 a = Pt ./ Pf;
 
+%% Validity checks (see pfc_checks.m)
+%  branch labels: index in the returned mpc.branch and the oriented bus pair
+br_labels = arrayfun(@(k) sprintf('%d (%d-%d)', k, f(k), t(k)), (1:nl)', 'UniformOutput', false);
+pfc_checks('inflow', Ptot, f, opts.tol_div, 'apfc');
+w_att = pfc_checks('attenuation', a(1:nl), br_labels, opts.tol_div);
+
 %% Build APFC system matrix A
 % Construct the parent-child adjacency matrix (ne x ne):
 % M(i,j) = 1 if branch j ends at the "from" bus of branch i, 0 otherwise
@@ -134,6 +140,9 @@ N = -diag(Pf .* hf) * M * diag(a);
 
 % APFC system matrix: A = I + N
 A = eye(ne) + N;
+
+% acyclicity of the flow digraph and spectral radius of N
+[acyclic, rho, w_cyc] = pfc_checks('cycle', N, M, 'apfc');
 
 %% Build RHS matrix B for each generator
 %  Each generator contributes only to branches that originate at its bus.
@@ -208,6 +217,9 @@ info.removed = struct('branches', nnz(i_del_br), 'generators', nnz(i_del_gen));
 info.flipped_branches = nnz(i_flip);
 info.converted = struct('negative_demand_to_source', numel(src_bus_pd), ...
                         'negative_generation_to_demand', numel(d_bus_pg));
+info.acyclic = acyclic;
+info.spectral_radius = rho;
+info.warnings = [w_att, w_cyc];
 info.opts = opts;
 
 %% Output table

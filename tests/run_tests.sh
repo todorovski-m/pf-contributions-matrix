@@ -1,0 +1,59 @@
+#!/bin/zsh
+# Run all tests of the matrix repository under Octave and print one PASS or FAIL line per test.
+#
+# Usage (from the root of the matrix repository, with the submodule initialised):
+#     zsh tests/run_tests.sh
+#
+# 1. Unit tests in tests/unit/ (options and input forms, validity checks, diag output).
+# 2. The acceptance of brief T12a: comparison with the old iterative method (pinned submodule) on
+#    in-memory results, with paper_results/ (legacy reference), and the row sums.
+# 3. Comparison with the end state of T12a (commit T12A_REF), regenerated from git history:
+#    values within 1e-12, labels unchanged except uniqueness suffixes.
+# Everything runs in scratch folders under /tmp; nothing is written inside the repository.
+# Exit status: 0 if every test passed, 1 otherwise.
+
+setopt NO_UNSET PIPE_FAIL
+T12A_REF=8ceb266
+[[ -f apfc.m && -f rpfc.m && -d tests ]] || { print -u2 "run this script from the root of the matrix repository"; exit 2 }
+WORK=$(mktemp -d /tmp/run_tests.XXXXXX)
+NFAIL=0; NPASS=0
+result() {   # result <name> <exit status> [detail]
+  if [[ $2 == 0 ]]; then print "PASS $1"; (( NPASS++ )); else print "FAIL $1${3:+: $3}"; (( NFAIL++ )); fi
+}
+print "work folder: $WORK"
+
+# 1. unit tests
+for t in test_options test_checks test_diag; do
+  zsh tests/octave_in_scratch.sh $t > $WORK/$t.log 2>&1
+  rc=$?
+  grep -E '^(PASS|FAIL) ' $WORK/$t.log | while read -r line; do
+    if [[ $line == PASS* ]]; then (( NPASS++ )); else (( NFAIL++ )); fi
+    print -r -- "$line"
+  done
+  if (( rc != 0 )) || ! grep -qE '^(PASS|FAIL) ' $WORK/$t.log; then result "$t (octave run)" 1 "exit $rc, see $WORK/$t.log"; fi
+done
+
+# 2. acceptance of T12a on the current code
+zsh tests/export_synthetic.sh $WORK/syn_inputs > $WORK/export_synthetic.log 2>&1
+result "export of the synthetic inputs for the old method" $? "see $WORK/export_synthetic.log"
+zsh tests/run_matrix.sh $WORK/new > $WORK/run_matrix.log 2>&1
+result "apfc and rpfc on all cases under Octave" $? "see $WORK/run_matrix.log"
+python3 -B tests/compare_old.py $WORK/new benchmark/inputs $WORK/syn_inputs > $WORK/compare_old.md 2>&1
+result "against the old method (cells and row sums within 1e-10)" $? "$(tail -1 $WORK/compare_old.md)"
+python3 -B tests/compare_legacy.py $WORK/new --t0-bad tests/data/T0_D_bad_1.csv > $WORK/compare_legacy.md 2>&1
+result "against paper_results/ (only the expected differences)" $? "$(tail -1 $WORK/compare_legacy.md)"
+
+# 3. against the end state of T12a
+mkdir -p $WORK/t12a && git archive $T12A_REF | tar -x -C $WORK/t12a
+mkdir -p $WORK/t12a/tests/cases_synthetic && cp tests/cases_synthetic/*.m $WORK/t12a/tests/cases_synthetic/
+CASES=()
+for c in $(cd $WORK/new && ls *_apfc.csv | sed 's/_apfc.csv$//'); do
+  [[ -f $WORK/t12a/cases/$c.m || -f $WORK/t12a/tests/cases_synthetic/$c.m ]] && CASES+=($c)   # cases that existed at T12A_REF
+done
+( cd $WORK/t12a && zsh tests/run_matrix.sh $WORK/t12a_out $CASES ) > $WORK/t12a_run.log 2>&1
+result "regenerate the T12a end state ($T12A_REF)" $? "see $WORK/t12a_run.log"
+python3 -B tests/compare_runs.py $WORK/new $WORK/t12a_out --tol 1e-12 > $WORK/compare_runs.md 2>&1
+result "against the T12a end state (values within 1e-12, labels unchanged except suffixes)" $? "$(tail -1 $WORK/compare_runs.md)"
+
+print "\n$NPASS passed, $NFAIL failed (details in $WORK)"
+(( NFAIL == 0 ))
