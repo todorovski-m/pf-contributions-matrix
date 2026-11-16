@@ -1,6 +1,5 @@
-# Python port of the matrix method (matrix/python). Versions as in benchmark/environment.txt
-# (Python 3.10.16). Create the environment with:
-#     python3.10 -m venv python/.venv && python/.venv/bin/pip install -r python/requirements.txt
+# Python port of the matrix method (matrix/python). Versions of the global Python 3.10.16
+# (/Users/mirko/.pyenv/shims/python), recorded by reports/T13b_scripts/write_requirements.py.
 numpy==2.2.6
 pandas==2.2.3
 scipy==1.13.1
@@ -8,4 +7,4 @@ scipy==1.13.1
 # (external/iterative-method) for comparison:
 networkx==3.4.2
 matplotlib==3.10.1
-pytest==9.2.0
+pytest==8.4.2
