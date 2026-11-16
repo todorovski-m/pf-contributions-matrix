@@ -2,3 +2,7 @@
 results/
 .vscode/
 cases_experimental/
+
+# Python port
+python/.venv/
+__pycache__/
