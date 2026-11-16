@@ -92,3 +92,27 @@ pfc_report('series flow: with warn = true, warning pfc:rpfc:negativeSeriesFlow n
     strcmp(id, 'pfc:rpfc:negativeSeriesFlow') && isequal(idx, 1) && ~isempty(strfind(m, '1 (2-1)')) && isempty(strfind(m, '2 (1-2)')), m);
 [w, idx] = pfc_checks('series_flow', [6.4; 12.4], [2.1; 2.2], {'1 (2-1)'; '2 (1-2)'}, 1e-6, true);
 pfc_report('series flow: positive series flows give no index and no warning', isempty(w) && isempty(idx));
+
+% negative to-end shunt self-term (T12e): error pfc:rpfc:negativeSelfTerm below -tol_div, naming only that branch
+lab3 = {'1 (1-2)'; '2 (2-3)'; '3 (3-4)'};
+try
+    pfc_checks('selfterm', [2.1; 0; -5e-10], lab3, 1e-9); ok = true; msg = '';
+catch err
+    ok = false; msg = err.message;
+end
+pfc_report('selfterm: values at or above -tol_div give no error', ok, msg);
+[ok, msg] = pfc_expect_error(@() pfc_checks('selfterm', [2.1; -1e-6; 3.0], lab3, 1e-9), 'pfc:rpfc:negativeSelfTerm');
+pfc_report('selfterm: a value below -tol_div is the error pfc:rpfc:negativeSelfTerm naming only that branch', ...
+    ok && ~isempty(strfind(msg, '2 (2-3)')) && isempty(strfind(msg, '1 (1-2)')) && isempty(strfind(msg, '3 (3-4)')), msg);
+% boundary: strict inequality, as in the inflow check (total == tol_div passes) and the series-flow check (-tol not flagged)
+try
+    pfc_checks('selfterm', [2.1; -1e-9; 3.0], lab3, 1e-9); ok = true; msg = '';
+catch err
+    ok = false; msg = err.message;
+end
+try
+    pfc_checks('inflow', [1e-9; 5; 0], [1; 2], 1e-9, 'rpfc'); ok_in = true;
+catch
+    ok_in = false;
+end
+pfc_report('selfterm: a value exactly at -tol_div gives no error (strict inequality, as the inflow check at tol_div)', ok && ok_in, msg);

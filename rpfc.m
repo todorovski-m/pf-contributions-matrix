@@ -21,7 +21,9 @@ function [RPFC_tbl, mpc, info] = rpfc(casedata, opts)
 %     errors, for conditions under which the results are not valid: the
 %       reactive flow digraph is cyclic and the spectral radius of N^Q is not
 %       below 1 (pfc:rpfc:spectralRadius); a bus with an outgoing branch has
-%       (near) zero total inflow (pfc:rpfc:zeroInflow);
+%       (near) zero total inflow (pfc:rpfc:zeroInflow); a to-end shunt
+%       self-term is below -tol_div (pfc:rpfc:negativeSelfTerm; cannot occur
+%       for a valid carrier, see the comment at the self-terms);
 %     warnings, for conditions that can invalidate the results; they are
 %       listed in DIAG.warnings (rpfc currently issues none; APFC warns for a
 %       cyclic active digraph and for an active attenuation above 1; a
@@ -285,6 +287,16 @@ for i = 1:nl
         self_toend(i) = (Qe(i) / Qs(i)) * Qsf(i) + Qst(i);
     end
 end
+% Guard: a negative self-term would not be propagated (only terms above
+% tol_div are), so the downstream row sums would not equal the flows.
+% With Qs = Qf + Qsf and Qe = Qt - Qst the self-term equals
+%     e^st = (Qe/Qs)*Qsf + Qst = Qt - aQ*Qf.
+% A valid carrier has Qf > 0 and Qt > 0 (Case 2 and Case 3 removed, both-
+% negative branches flipped) and Qsf, Qst >= 0 after the conversion of
+% inductive shunts to demands. Then e^st > Qt > 0 if aQ < 0, and
+% e^st = aQ*Qsf + Qst >= 0 if aQ >= 0, so the error cannot occur; it can only
+% be reached through shunt flows in [-tol, 0), which are not converted.
+pfc_checks('selfterm', self_toend, br_labels, tol_div);
 
 i_self    = find(self_toend > tol_div);
 n_self    = numel(i_self);

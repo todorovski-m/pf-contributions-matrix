@@ -44,6 +44,12 @@ function varargout = pfc_checks(action, varargin)
 %     example case14, case118) and does not invalidate the results. No
 %     warning is printed unless WARN is true (default false); then the
 %     warning pfc:rpfc:negativeSeriesFlow lists the branches.
+%   PFC_CHECKS('selfterm', S, LABELS, TOL_DIV)
+%     Error pfc:rpfc:negativeSelfTerm, naming the branches, if a to-end shunt
+%     self-term S(i) of a reactive carrier is below -TOL_DIV. Only self-terms
+%     above TOL_DIV are propagated downstream, so a negative one would leave
+%     the downstream row sums unequal to the flows. For a valid carrier the
+%     error cannot occur (see the comment at the self-terms in rpfc.m).
 %
 %   W is a cell array of the warning identifiers that were issued.
 
@@ -62,6 +68,8 @@ switch action
         check_inflow(varargin{:});
     case 'series_flow'
         [varargout{1}, varargout{2}] = check_series_flow(varargin{:});
+    case 'selfterm'
+        check_selfterm(varargin{:});
     otherwise
         error('pfc:checks:unknownAction', 'pfc_checks: unknown action ''%s''.', action);
 end
@@ -214,6 +222,15 @@ if ~isempty(bad)
     error(['pfc:' kind ':zeroInflow'], ['Total inflow below %.3g at bus(es) %s, which have an outgoing ' ...
         'branch: the shares cannot be computed.'], tol_div, strjoin(arrayfun(@(k) sprintf('%d', k), bad.', ...
         'UniformOutput', false), ', '));
+end
+end
+
+function check_selfterm(s, labels, tol_div)
+bad = find(s(:) < -tol_div);
+if ~isempty(bad)
+    error('pfc:rpfc:negativeSelfTerm', ['To-end shunt self-term below -%.3g (it would not be propagated, ' ...
+        'and the downstream row sums would not equal the flows) for branch(es): %s.'], tol_div, ...
+        strjoin(labels(bad).', ', '));
 end
 end
 

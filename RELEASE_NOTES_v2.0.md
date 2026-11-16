@@ -29,6 +29,7 @@ Version 2.0 of the matrix-based active and reactive power flow contribution meth
 - **Options:** `apfc(casedata, opts)` and `rpfc(casedata, opts)`, with `tol` (default 1e-6), `tol_div` (default 1e-9), `write`, `solved` and `name`. `casedata` may also be a case struct, or a solved case struct (with `solved = true`, `runpf` is not called). The defaults reproduce the behaviour above. Every threshold literal is replaced by `tol` or `tol_div`.
 - **Diagnostics:** a third output `diag`, with sizes, non-zeros, sparsity, `condest`, the attenuation range, removed, flipped and converted elements, acyclicity, the spectral radius, the warnings, and the branches with a negative series flow.
 - **Validity checks (`pfc_checks.m`):** acyclicity (Kahn's topological sort), the spectral radius for cyclic digraphs, the attenuation range, and the inflow guard, with identifiers `pfc:...`. They fall into errors, warnings, and information recorded in `diag` only; see the README.
+- **Guard against a negative to-end shunt self-term:** error `pfc:rpfc:negativeSelfTerm` if a self-term is below `-tol_div`. It cannot occur for a valid carrier (the self-term equals Qt - aQ*Qf) and changes no result.
 - **Sparse construction:** N, A and B are built with `spdiags` and `speye`, so they are sparse in Matlab as well (not verified in Matlab).
 - **Negative reactive attenuation** is recorded in `diag.negative_series_flow`. It occurs in standard cases (case14, case24_ieee_rts, case118) and leads to some negative contributions; the README has the table.
 

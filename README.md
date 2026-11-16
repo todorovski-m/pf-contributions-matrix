@@ -198,6 +198,7 @@ The checks are in `pfc_checks.m` and use identifiers of the form `pfc:...`. They
 | | cyclic reactive digraph with spectral radius of N at or above 1 (the sufficient condition for the Neumann series is not met) | `pfc:rpfc:spectralRadius` |
 | | active attenuation at or below 0 (a branch fed from both ends) | `pfc:apfc:nonPositiveAttenuation` |
 | | total inflow below `tol_div` at a bus with an outgoing branch | `pfc:apfc:zeroInflow`, `pfc:rpfc:zeroInflow` |
+| | to-end shunt self-term of a reactive carrier below `-tol_div` (it would not be propagated; cannot occur for a valid carrier, see `rpfc.m`) | `pfc:rpfc:negativeSelfTerm` |
 | | invalid input, unknown option, unsolved or non-converged power flow | `pfc:options:...`, `pfc:input:...`, `pfc:runpf:notConverged` |
 | Warning (can invalidate the results) | cyclic active digraph with spectral radius below 1 | `pfc:apfc:cyclic` |
 | | active attenuation above 1 + `tol_div` | `pfc:apfc:attenuationAboveOne` |
