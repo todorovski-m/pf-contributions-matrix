@@ -39,7 +39,11 @@ zsh tests/export_synthetic.sh $WORK/syn_inputs > $WORK/export_synthetic.log 2>&1
 result "export of the synthetic inputs for the old method" $? "see $WORK/export_synthetic.log"
 zsh tests/run_matrix.sh $WORK/new > $WORK/run_matrix.log 2>&1
 result "apfc and rpfc on all cases under Octave" $? "see $WORK/run_matrix.log"
-python3 -B tests/compare_old.py $WORK/new benchmark/inputs $WORK/syn_inputs > $WORK/compare_old.md 2>&1
+# Cases compared with the old method: the default list of compare_old.py, given explicitly. The synthetic case
+# syn9_carrier_tap is not compared: the old pipeline computes the from-end shunt flow QSF of its tapped line with
+# B/2 instead of B/(2*tap^2) (my_runpf.m, known issue), so the old method disagrees with rpfc.m there.
+OLD_CASES=case1,case9,case14,case24_ieee_rts,case30,case33,case118,tap_loop,syn9_neg_pd,syn9_neg_pg,syn9_neg_qd,syn9_neg_qg,syn9_case3_tap
+python3 -B tests/compare_old.py $WORK/new benchmark/inputs $WORK/syn_inputs --cases $OLD_CASES > $WORK/compare_old.md 2>&1
 result "against the old method (cells and row sums within 1e-10)" $? "$(tail -1 $WORK/compare_old.md)"
 python3 -B tests/compare_legacy.py $WORK/new --t0-bad tests/data/T0_D_bad_1.csv > $WORK/compare_legacy.md 2>&1
 result "against paper_results/ (only the expected differences)" $? "$(tail -1 $WORK/compare_legacy.md)"
