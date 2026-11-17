@@ -65,8 +65,9 @@ def scan_case(name, dirs, raw):
         has_out = np.zeros(p0.nb + 1, bool); has_out[p0.f] = True
         row["zero_inflow_buses_apfc"] = int((has_out & (inflow < 1e-9)).sum())
         # terminal classification (T15b): branches with one zero terminal
-        row["negative_loss_branches_apfc"] = len(p0.negative_loss_to) + len(p0.negative_loss_from)
+        row["negative_loss_branches_apfc"] = len(p0.negative_loss_to) + len(p0.negative_loss_from) + len(p0.negative_loss_both)
         row["zero_terminal_demands_apfc"] = p0.converted["zero_terminal_demands"]
+        row["case2_branches_apfc"] = p0.converted["case2_branches_to_demands"]      # (+,-): fed from both ends (T14c)
     except Exception as e:
         row["zero_inflow_buses_apfc"] = f"not computed ({getattr(e, 'identifier', type(e).__name__)})"
     try:      # the same for the RPFC zero-inflow guard, and the terminal classification of RPFC
@@ -144,7 +145,8 @@ def main():
         r["status"] = usability(r, limit)
     cols = ["case", "status", "buses", "branches", "generators", "buses_numbered_1_to_nb", "tap_ne_1", "br_b_ne_0", "tap_and_br_b",
             "tap_and_br_b_carriers", "deleted_by_my_runpf", "case2_branches", "case3_branches", "port", "zero_inflow_buses_apfc",
-            "zero_inflow_buses_rpfc", "negative_loss_branches_apfc", "zero_terminal_demands_apfc", "zero_terminal_demands_rpfc",
+            "zero_inflow_buses_rpfc", "negative_loss_branches_apfc", "zero_terminal_demands_apfc", "case2_branches_apfc",
+            "zero_terminal_demands_rpfc",
             "zero_terminal_sources_rpfc", "negative_series_flow_carriers", "n_e_apfc", "nnz_N_apfc", "acyclic_apfc", "spectral_radius_apfc", "condest_A_apfc",
             "n_e_rpfc", "nnz_N_rpfc", "acyclic_rpfc", "spectral_radius_rpfc", "condest_A_rpfc",
             "dense_table_bytes_apfc", "dense_table_bytes_rpfc", "error_apfc", "error_rpfc"]
