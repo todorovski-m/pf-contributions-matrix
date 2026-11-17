@@ -97,6 +97,15 @@ def test_guard_records_an_error_of_the_old_method(monkeypatch):
     assert g["old_status"].startswith("did not finish (error: ZeroDivisionError: division by zero (at test_timing.py:")
 
 
+@pytest.mark.skipif(not os.environ.get("PFC_SYN_INPUTS"), reason="needs the synthetic exports (PFC_SYN_INPUTS)")
+def test_guard_flows_with_omitted_zero_terminals():
+    # a reactive Case-3 branch with a zero terminal has one row only (T15b; syn9_dead_charge_to): the guard's flows follow the table rows
+    data = C.load("syn9_dead_charge_to", [os.environ["PFC_SYN_INPUTS"]])
+    table, pub, flows, _ = T.port_flows(data, "rpfc")
+    assert len(flows) == len(table)
+    assert np.abs(table.to_numpy().sum(axis=1) - flows).max() <= 1e-10
+
+
 def test_port_runner_phases():
     data = C.load("case9", C.input_dirs())
     table, ph = T.port_runner(data, "rpfc", True)()

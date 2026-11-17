@@ -256,7 +256,8 @@ def port_flows(data, kind):
         flows = np.r_[p.Pf[nl:], p.Pf[:nl], p.Pt[:nl]]
     else:
         p = prepare_reactive(case, TOL); nl = p.nl
-        flows = np.r_[p.Qf[nl:], p.Qf[:nl], p.Qt[:nl], -p.case3_QF, p.case3_QT]
+        hf, ht = np.asarray(p.case3_hasf, bool), np.asarray(p.case3_hast, bool)   # zero terminals omitted (T15b)
+        flows = np.r_[p.Qf[nl:], p.Qf[:nl], p.Qt[:nl], -p.case3_QF[hf], p.case3_QT[ht]]
     return table, pub, flows, info
 
 
@@ -461,7 +462,7 @@ def run_series(a):
                 g = guard(data, kind, a.itermax, a.timeout, branch_old)
             except Exception as e:
                 cells.append({"case": c, "method": "all", "kind": kind, "checks": "",
-                              "status": f"not timed (port raises {getattr(e, 'identifier', type(e).__name__)}: {str(e)[:200]})"})
+                              "status": f"not timed (guard raises {getattr(e, 'identifier', type(e).__name__)}: {str(e)[:200]})"})
                 continue
             guards.append(g)
             iters.append({"case": c, "kind": kind, "old_status": g["old_status"], "iterations": g["iterations"], "itermax": a.itermax})
