@@ -21,6 +21,7 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from .labels import disambiguate_parallel, unique_labels
+from .options import resolve_options
 
 PERMC_SPEC = "COLAMD"   # column ordering of scipy.sparse.linalg.splu (SuperLU)
 REACTIVE_BUS_COLUMNS = ("QS",)
@@ -282,10 +283,13 @@ def _nnz(m):
     return int(np.count_nonzero(m.data))
 
 
-def rpfc(case, tol=1e-6, tol_div=1e-9):
-    """RPFC of a solved case (built with branch parameters). Returns (table, info): the table has the row labels,
+def rpfc(case, options=None, tol=None, tol_div=None):
+    """RPFC of a solved case (built with branch parameters). ``options`` is an Options (or a dict, or None for
+    the defaults); the keyword arguments tol and tol_div win over it. Returns (table, info): the table has the row labels,
     column labels, order and values of the CSV of rpfc.m; info holds the sizes and counts of diag of rpfc.m [Q26],
     the solver, and the self-terms (for the guard of T13c)."""
+    opts = resolve_options(options, tol, tol_div)
+    tol, tol_div = opts.tol, opts.tol_div
     prep = prepare_reactive(case, tol)
     system = assemble_reactive(prep, tol, tol_div)
     X, X_self = solve_reactive(system)
@@ -300,5 +304,6 @@ def rpfc(case, tol=1e-6, tol_div=1e-9):
         "negative_series_flow": {"count": len(system.negative_series_flow),
                                  "branches": list(system.negative_series_flow)},
         "self_toend": [float(v) for v in system.self_toend],
+        "opts": opts.as_dict(),
     }
     return table, info

@@ -17,6 +17,7 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from .labels import disambiguate_parallel, unique_labels
+from .options import resolve_options
 
 PERMC_SPEC = "COLAMD"   # column ordering of scipy.sparse.linalg.splu (SuperLU)
 
@@ -158,9 +159,12 @@ def _nnz(m):
     return int(np.count_nonzero(m.data))
 
 
-def apfc(case, tol=1e-6):
-    """APFC of a solved case. Returns (table, info): the table has the row labels, column labels, order
-    and values of the CSV of apfc.m; info holds the sizes and counts of diag of apfc.m."""
+def apfc(case, options=None, tol=None, tol_div=None):
+    """APFC of a solved case. ``options`` is an Options (or a dict, or None for the defaults); the keyword
+    arguments tol and tol_div win over it. Returns (table, info): the table has the row labels, column labels,
+    order and values of the CSV of apfc.m; info holds the fields of diag of apfc.m."""
+    opts = resolve_options(options, tol, tol_div)
+    tol = opts.tol
     prep = prepare_active(case, tol)
     system = assemble_active(prep)
     X = solve_active(system)
@@ -171,5 +175,6 @@ def apfc(case, tol=1e-6):
         "issparse": {"N": sp.issparse(system.N), "A": sp.issparse(system.A), "B": sp.issparse(system.B)},
         "removed": prep.removed, "flipped_branches": prep.flipped_branches, "converted": prep.converted,
         "solver": f"scipy.sparse.linalg.splu (SuperLU), permc_spec={PERMC_SPEC}",
+        "opts": opts.as_dict(),
     }
     return table, info
