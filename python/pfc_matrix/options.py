@@ -30,9 +30,11 @@ class Options:
     write    accepted for compatibility; no effect: apfc and rpfc never write files (use write_csv)
     solved   accepted for compatibility; no effect: the input of the port is always a solved case
     name     accepted for compatibility; stored in info["opts"] (the case name is Case.name)
-    checks   Python only (default True): False switches off the optional checks (attenuation range,
-             cyclic-digraph warning, negative self-term guard); the guards that protect the solve
-             (zero inflow, spectral radius at or above 1) always run.
+    checks   Python only (default True): False switches off the attenuation range check of apfc
+             (pfc:apfc:nonPositiveAttenuation, pfc:apfc:attenuationAboveOne), the warning pfc:apfc:cyclic and the
+             condition estimate (info["condest_A"] is then None). Always on: the zero-inflow guard
+             (pfc:*:zeroInflow), the spectral-radius guard (pfc:*:spectralRadius, rho >= 1) and the negative
+             self-term guard (pfc:rpfc:negativeSelfTerm).
 
     Unknown names raise PfcError (a ValueError) 'pfc:options:unknownField'; invalid values raise
     'pfc:options:value', as in pfc_checks('options')."""

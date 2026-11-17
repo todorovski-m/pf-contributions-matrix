@@ -5,11 +5,12 @@ The computation is split into four phases, which can be called (and later timed)
     assemble_active(prep)          (b) assembly of M, N, A and B (scipy.sparse)
     solve_active(system)           (c) sparse LU factorisation of A and solve for all columns of B
     build_active_table(prep, X)    (d) output table (pandas DataFrame) and labels
-``apfc(case, tol)`` calls them in this order. No phase prints, times or writes files.
+``apfc(case, options)`` calls them in this order. No phase prints, times or writes files; the checks of apfc.m
+(module checks) run inside phase (b), raise PfcError or issue PfcWarning.
 
 The rules are those of apfc.m; the numbered rules of the T13a report are referenced as [Rn].
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,9 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from .labels import disambiguate_parallel, unique_labels
-from .options import resolve_options
+from .options import resolve_options, PfcError
+from .inputs import Case
+from . import checks
 
 PERMC_SPEC = "COLAMD"   # column ordering of scipy.sparse.linalg.splu (SuperLU)
 
@@ -58,6 +61,9 @@ class ActiveSystem:
     A: sp.csc_matrix
     B: sp.csc_matrix
     a: np.ndarray           # attenuation factors Pt / Pf of the expanded network
+    acyclic: bool = True    # [R20] checks: acyclicity of the flow digraph (Kahn on M)
+    spectral_radius: float = 0.0
+    warnings: list = field(default_factory=list)
 
 
 def prepare_active(case, tol=1e-6):
@@ -104,8 +110,10 @@ def prepare_active(case, tol=1e-6):
     )
 
 
-def assemble_active(prep):
-    """Phase (b): incidence matrices, total inflows, attenuation, and the sparse matrices M, N, A, B."""
+def assemble_active(prep, tol_div=1e-9, run_checks=True):
+    """Phase (b): incidence matrices, total inflows, attenuation, and the sparse matrices M, N, A, B, with the
+    checks of apfc.m in its order [R20]: inflow guard (always), attenuation range (if run_checks), cycle and
+    spectral radius (the error always, the warning pfc:apfc:cyclic if run_checks)."""
     ne, nb, ng = prep.ne, prep.nb, prep.ng
     rows = np.arange(ne)
     # [R9] Cf, Ct: branch -> bus incidence (ne x nb+1, the last column is the sink); Cg: source -> bus
@@ -118,15 +126,21 @@ def assemble_active(prep):
         h = 1.0 / Ptot
         a = prep.Pt / prep.Pf
     hf = h[prep.f]
+    # [R20] checks: inflow guard, attenuation range of the physical branches (labels 'k (f-t)', 1-based)
+    nl = prep.nl
+    labels = [f"{k + 1} ({prep.f[k] + 1}-{prep.t[k] + 1})" for k in range(nl)]
+    checks.check_inflow(Ptot, prep.f, tol_div, "apfc")
+    w_att = checks.check_attenuation(a[:nl], labels, tol_div) if run_checks else []
     # [R11] M = Cf Ct' (M(i,j) = 1 if branch j ends at the from-bus of branch i); N = -diag(Pf.hf) M diag(a)
     M = (Cf @ Ct.T).tocsc()
     D = sp.diags(prep.Pf * hf, 0, shape=(ne, ne), format="csc")
     N = (-(D @ M @ sp.diags(a, 0, shape=(ne, ne), format="csc"))).tocsc()
     # [R12] A = I + N; [R13] B = diag(Pf.hf) S diag(Pg), S = Cf Cg'
     A = (sp.identity(ne, format="csc") + N).tocsc()
+    acyclic, rho, w_cyc = checks.check_cycle(N, M, "apfc", warn_cyclic=run_checks)
     S = Cf @ Cg.T
     B = (D @ S @ sp.diags(prep.Pg, 0, shape=(ng, ng), format="csc")).tocsc()
-    return ActiveSystem(M=M, N=N, A=A, B=B, a=a)
+    return ActiveSystem(M=M, N=N, A=A, B=B, a=a, acyclic=acyclic, spectral_radius=rho, warnings=w_att + w_cyc)
 
 
 def solve_active(system):
@@ -162,11 +176,17 @@ def _nnz(m):
 def apfc(case, options=None, tol=None, tol_div=None):
     """APFC of a solved case. ``options`` is an Options (or a dict, or None for the defaults); the keyword
     arguments tol and tol_div win over it. Returns (table, info): the table has the row labels, column labels,
-    order and values of the CSV of apfc.m; info holds the fields of diag of apfc.m."""
+    order and values of the CSV of apfc.m; info holds the fields of diag of apfc.m.
+    info["removed"]["branches"] counts the branches removed from the exported input (rule R2 / Q6). It can be smaller
+    than diag.removed.branches of the Matlab code by the branches that my_runpf.m of the iterative method had already
+    deleted before the export (all four flows below 1e-4), for example branch 9-11 of case30; the exported file does
+    not record them.
+    """
     opts = resolve_options(options, tol, tol_div)
-    tol = opts.tol
-    prep = prepare_active(case, tol)
-    system = assemble_active(prep)
+    if not isinstance(case, Case):
+        raise PfcError("pfc:input:casedata", "case must be a pfc_matrix.Case (see Case.from_frames).")
+    prep = prepare_active(case, opts.tol)
+    system = assemble_active(prep, opts.tol_div, opts.checks)
     X = solve_active(system)
     table = build_active_table(prep, X, system.a)
     info = {
@@ -174,6 +194,10 @@ def apfc(case, options=None, tol=None, tol_div=None):
         "n_e": prep.ne, "nnz_N": _nnz(system.N), "nnz_A": _nnz(system.A),
         "issparse": {"N": sp.issparse(system.N), "A": sp.issparse(system.A), "B": sp.issparse(system.B)},
         "removed": prep.removed, "flipped_branches": prep.flipped_branches, "converted": prep.converted,
+        "condest_A": checks.condest(system.A) if opts.checks else None,
+        "attenuation_range": ([float(system.a[:prep.nl].min()), float(system.a[:prep.nl].max())] if prep.nl else []),
+        "acyclic": bool(system.acyclic), "spectral_radius": float(system.spectral_radius),
+        "warnings": list(system.warnings),
         "solver": f"scipy.sparse.linalg.splu (SuperLU), permc_spec={PERMC_SPEC}",
         "opts": opts.as_dict(),
     }

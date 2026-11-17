@@ -8,12 +8,12 @@ The computation is split into four phases, which can be called (and later timed)
     solve_reactive(system)                (c) one sparse LU factorisation of A, used for both solves
     build_reactive_table(prep, system, X, X_self)   (d) output table (pandas DataFrame) and labels
 ``rpfc(case, tol, tol_div)`` calls them in this order. No phase prints, times or writes files. The validity checks
-of rpfc.m (inflow, cycle, and the guard pfc:rpfc:negativeSelfTerm) are not implemented here (brief T13c); the
-self-terms are returned in ``info["self_toend"]`` for the guard.
+of rpfc.m (module checks: inflow, series flow, cycle, and the guard pfc:rpfc:negativeSelfTerm) run inside phase (b);
+the self-terms are also returned in ``info["self_toend"]``.
 
 The rules are those of rpfc.m; the numbered rules Q1 to Q26 of the T13b report are referenced as [Qn].
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -21,7 +21,9 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from .labels import disambiguate_parallel, unique_labels
-from .options import resolve_options
+from .options import resolve_options, PfcError
+from .inputs import Case
+from . import checks
 
 PERMC_SPEC = "COLAMD"   # column ordering of scipy.sparse.linalg.splu (SuperLU)
 REACTIVE_BUS_COLUMNS = ("QS",)
@@ -77,12 +79,15 @@ class ReactiveSystem:
     Qe: np.ndarray
     self_toend: np.ndarray  # self-term of every carrier [Q18]
     negative_series_flow: list
+    acyclic: bool = True    # [Q15] checks
+    spectral_radius: float = 0.0
+    warnings: list = field(default_factory=list)
 
 
 def _require(frame, cols, what):
     missing = [c for c in cols if c not in frame.columns]
     if missing:
-        raise ValueError(f"{what} table lacks the columns {missing} (needed by rpfc)")
+        raise PfcError("pfc:input:columns", f"{what} table lacks the columns {missing} (needed by rpfc)")
 
 
 def branch_shunt_flows(case):
@@ -90,7 +95,7 @@ def branch_shunt_flows(case):
     BR_R, BR_X, TAP, VM, VA and baseMVA: I = Yb/tap (Vf - Vt), Qs = Im(Vf conj(I)) baseMVA,
     Qe = Im(Vt conj(I)) baseMVA, Qsf = Qs - QF, Qst = QT - Qe (QT delivered)."""
     if case.params is None:
-        raise ValueError("rpfc needs the branch parameters: build the Case with params=read_branch_params(path)")
+        raise PfcError("pfc:input:branchParams", "rpfc needs the branch parameters: build the Case with params=read_branch_params(path)")
     br, bus, p = case.branch, case.bus, case.params
     tap = br["TAP"].to_numpy(float).copy()
     tap[tap == 0] = 1.0
@@ -206,26 +211,32 @@ def assemble_reactive(prep, tol=1e-6, tol_div=1e-9):
     with np.errstate(divide="ignore"):
         h = 1.0 / Qtot
     hf = h[prep.f]
-    # [Q15] carriers with a negative series flow (informational), labelled 'k (f-t)'
-    i_ser = np.where((Qs[:nl] < -tol) | (Qe[:nl] < -tol))[0]
-    neg = [f"{k + 1} ({prep.f[k] + 1}-{prep.t[k] + 1})" for k in i_ser]
+    # [Q15] checks in the order of rpfc.m: inflow guard (always); carriers with a negative series flow
+    # (informational, labelled 'k (f-t)'); cycle and spectral radius after A; negative self-term after [Q18]
+    labels = [f"{k + 1} ({prep.f[k] + 1}-{prep.t[k] + 1})" for k in range(nl)]
+    checks.check_inflow(Qtot, prep.f, tol_div, "rpfc")
+    _, i_ser = checks.check_series_flow(Qs[:nl], Qe[:nl], labels, tol)
+    neg = [labels[k] for k in i_ser]
     # [Q16] system
     D = sp.diags(prep.Qf * hf, 0, shape=(ne, ne), format="csc")
     M = (Cf @ Ct.T).tocsc()
     N = (-(D @ (M @ sp.diags(aQ, 0, shape=(ne, ne), format="csc")))).tocsc()
     A = (sp.identity(ne, format="csc") + N).tocsc()
+    acyclic, rho, w_cyc = checks.check_cycle(N, M, "rpfc")
     B = (D @ (Cf @ Cs.T) @ sp.diags(prep.Qsrc, 0, shape=(ns, ns), format="csc")).tocsc()
     # [Q18] self-terms of the carriers
     self_toend = np.zeros(nl)
     big = np.abs(Qs[:nl]) > tol_div
     self_toend[big] = (Qe[:nl][big] / Qs[:nl][big]) * prep.Qsf[:nl][big] + prep.Qst[:nl][big]
+    checks.check_selfterm(self_toend, labels, tol_div)     # guard pfc:rpfc:negativeSelfTerm (always on)
     # [Q19] right-hand side of the self-term solve
     i_self = np.where(self_toend > tol_div)[0]
     n_self = len(i_self)
     Css = sp.csc_matrix((np.ones(n_self), (np.arange(n_self), prep.t[i_self])), shape=(n_self, nb + 1))
     B_self = (D @ (Cf @ Css.T) @ sp.diags(self_toend[i_self], 0, shape=(n_self, n_self), format="csc")).tocsc()
     return ReactiveSystem(M=M, N=N, A=A, B=B, B_self=B_self, i_self=i_self, aQ=aQ, Qs=Qs, Qe=Qe,
-                          self_toend=self_toend, negative_series_flow=neg)
+                          self_toend=self_toend, negative_series_flow=neg, acyclic=acyclic, spectral_radius=rho,
+                          warnings=w_cyc)
 
 
 def solve_reactive(system):
@@ -287,8 +298,15 @@ def rpfc(case, options=None, tol=None, tol_div=None):
     """RPFC of a solved case (built with branch parameters). ``options`` is an Options (or a dict, or None for
     the defaults); the keyword arguments tol and tol_div win over it. Returns (table, info): the table has the row labels,
     column labels, order and values of the CSV of rpfc.m; info holds the sizes and counts of diag of rpfc.m [Q26],
-    the solver, and the self-terms (for the guard of T13c)."""
+    the solver, and the self-terms (for the guard of T13c).
+    info["removed"]["branches"] counts the branches removed from the exported input (rule R2 / Q6). It can be smaller
+    than diag.removed.branches of the Matlab code by the branches that my_runpf.m of the iterative method had already
+    deleted before the export (all four flows below 1e-4), for example branch 9-11 of case30; the exported file does
+    not record them.
+    """
     opts = resolve_options(options, tol, tol_div)
+    if not isinstance(case, Case):
+        raise PfcError("pfc:input:casedata", "case must be a pfc_matrix.Case (see Case.from_frames).")
     tol, tol_div = opts.tol, opts.tol_div
     prep = prepare_reactive(case, tol)
     system = assemble_reactive(prep, tol, tol_div)
@@ -299,6 +317,10 @@ def rpfc(case, options=None, tol=None, tol_div=None):
         "n_e": prep.ne, "nnz_N": _nnz(system.N), "nnz_A": _nnz(system.A),
         "issparse": {"N": sp.issparse(system.N), "A": sp.issparse(system.A), "B": sp.issparse(system.B)},
         "removed": prep.removed, "flipped_branches": prep.flipped_branches, "converted": prep.converted,
+        "condest_A": checks.condest(system.A) if opts.checks else None,
+        "attenuation_range": ([float(system.aQ[:prep.nl].min()), float(system.aQ[:prep.nl].max())] if prep.nl else []),
+        "acyclic": bool(system.acyclic), "spectral_radius": float(system.spectral_radius),
+        "warnings": list(system.warnings),
         "solver": f"scipy.sparse.linalg.splu (SuperLU), permc_spec={PERMC_SPEC}; one factorisation of A "
                   f"used for both solves (main and self-term)",
         "negative_series_flow": {"count": len(system.negative_series_flow),

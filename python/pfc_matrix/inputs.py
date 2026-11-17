@@ -20,6 +20,8 @@ import numpy as np
 import pandas as pd
 import scipy.io as sio
 
+from .options import PfcError
+
 BUS_COLUMNS = ("BUS_I", "PD", "QD", "VM", "VA")
 GEN_COLUMNS = ("GEN_BUS", "PG", "QG")
 BRANCH_COLUMNS = ("F_BUS", "T_BUS", "PF", "QF", "PT", "QT")
@@ -41,7 +43,7 @@ def read_branch_params(path):
     rows of the branch DataFrame of load_results."""
     m = sio.loadmat(path)
     if "branch" not in m or "baseMVA" not in m:
-        raise ValueError(f"{path}: no branch matrix or no baseMVA")
+        raise PfcError("pfc:input:branchParams", f"{path}: no branch matrix or no baseMVA")
     br = np.asarray(m["branch"], dtype=float)
     frame = pd.DataFrame({"F_BUS": br[:, _F_BUS].astype(int), "T_BUS": br[:, _T_BUS].astype(int),
                           "BR_R": br[:, _BR_R], "BR_X": br[:, _BR_X], "BR_B": br[:, _BR_B]})
@@ -68,15 +70,18 @@ class Case:
 
         ``params`` (optional, a ``BranchParams``, for example from ``read_branch_params``) is needed only by
         ``rpfc``. Its rows must align with ``branch`` (same number of rows, same F_BUS and T_BUS); otherwise a
-        ValueError is raised.
+        PfcError (a ValueError) 'pfc:input:branchParams' is raised.
         """
         for frame, cols, what in ((bus, BUS_COLUMNS, "bus"), (gen, GEN_COLUMNS, "gen"), (branch, BRANCH_COLUMNS, "branch")):
             missing = [c for c in cols if c not in frame.columns]
+            if what == "branch" and any(c in missing for c in ("PF", "QF", "PT", "QT")):
+                raise PfcError("pfc:input:notSolved",
+                               "the branch table has no power flow columns (PF, QF, PT, QT): the case is not solved.")
             if missing:
-                raise ValueError(f"{what} table lacks the columns {missing}")
+                raise PfcError("pfc:input:columns", f"{what} table lacks the columns {missing}")
         nb = len(bus)
         if not np.array_equal(bus["BUS_I"].to_numpy(int), np.arange(1, nb + 1)):
-            raise ValueError("buses must be numbered 1..nb in table order (as assumed by apfc.m)")
+            raise PfcError("pfc:input:busNumbering", "buses must be numbered 1..nb in table order (as assumed by apfc.m)")
         if params is not None:
             check_alignment(branch, params)
             params = BranchParams(frame=params.frame.copy(), base_mva=float(params.base_mva))
@@ -87,9 +92,9 @@ def check_alignment(branch, params):
     """Raise ValueError unless the rows of ``params.frame`` align with ``branch`` (row count, F_BUS, T_BUS)."""
     missing = [c for c in PARAM_COLUMNS if c not in params.frame.columns]
     if missing:
-        raise ValueError(f"branch parameters lack the columns {missing}")
+        raise PfcError("pfc:input:branchParams", f"branch parameters lack the columns {missing}")
     if len(params.frame) != len(branch):
-        raise ValueError(f"branch parameters have {len(params.frame)} rows, the branch table {len(branch)}")
+        raise PfcError("pfc:input:branchParams", f"branch parameters have {len(params.frame)} rows, the branch table {len(branch)}")
     for c in ("F_BUS", "T_BUS"):
         if not np.array_equal(params.frame[c].to_numpy(int), branch[c].to_numpy(int)):
-            raise ValueError(f"branch parameters and branch table differ in {c}")
+            raise PfcError("pfc:input:branchParams", f"branch parameters and branch table differ in {c}")
