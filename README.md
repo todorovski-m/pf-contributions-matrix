@@ -219,7 +219,7 @@ The checks are in `pfc_checks.m` and use identifiers of the form `pfc:...`. They
 |---|---|---|
 | Error (results not valid) | cyclic active digraph with spectral radius of N at or above 1 | `pfc:apfc:spectralRadius` |
 | | cyclic reactive digraph with spectral radius of N at or above 1 (the sufficient condition for the Neumann series is not met) | `pfc:rpfc:spectralRadius` |
-| | active attenuation at or below 0 (a branch fed from both ends) | `pfc:apfc:nonPositiveAttenuation` |
+| | active attenuation at or below 0 (a defensive check; reachable only by a terminal flow equal to the tolerance, so the message asks to check the input) | `pfc:apfc:nonPositiveAttenuation` |
 | | active power delivered at one end of a branch whose other end carries zero flow (negative loss; patterns (0,+) and (-,0), see "Terminal Classification") | `pfc:apfc:negativeLoss` |
 | | total inflow below `tol_div` at a bus with an outgoing branch | `pfc:apfc:zeroInflow`, `pfc:rpfc:zeroInflow` |
 | | to-end shunt self-term of a reactive carrier below `-tol_div` (it would not be propagated; cannot occur for a valid carrier, see `rpfc.m`) | `pfc:rpfc:negativeSelfTerm` |

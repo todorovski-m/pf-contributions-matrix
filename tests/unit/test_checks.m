@@ -55,6 +55,8 @@ lab = {'1 (1-2)'; '2 (2-3)'; '3 (3-4)'};
 pfc_report('attenuation: a <= 0 is an error naming the branch', ok && ~isempty(strfind(msg, '2 (2-3)')), msg);
 [ok, msg] = pfc_expect_error(@() pfc_checks('attenuation', [0.9; 0; 0.95], lab, 1e-9), 'pfc:apfc:nonPositiveAttenuation');
 pfc_report('attenuation: a = 0 is an error', ok, msg);
+pfc_report('attenuation: the message of the error (T14c)', ~isempty(strfind(msg, ...
+    'Active attenuation Pt/Pf <= 0 (terminal flow at the tolerance; check the input) for branch(es): 2 (2-3).')), msg);
 lastwarn('', '');
 w = pfc_checks('attenuation', [0.9; 1 + 1e-6; 1 + 1e-12], lab, 1e-9);
 [m, id] = lastwarn;

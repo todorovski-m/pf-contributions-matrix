@@ -164,7 +164,9 @@ LAB = ["1 (1-2)", "2 (2-3)", "3 (3-4)"]
 def test_attenuation():                                          # the four 'attenuation: ...' tests
     msg = raises("pfc:apfc:nonPositiveAttenuation", checks.check_attenuation, [0.9, -0.1, 0.95], LAB, 1e-9)
     assert "2 (2-3)" in msg
-    raises("pfc:apfc:nonPositiveAttenuation", checks.check_attenuation, [0.9, 0.0, 0.95], LAB, 1e-9)
+    m0 = raises("pfc:apfc:nonPositiveAttenuation", checks.check_attenuation, [0.9, 0.0, 0.95], LAB, 1e-9)
+    assert m0 == ("Active attenuation Pt/Pf <= 0 (terminal flow at the tolerance; check the input) "
+                  "for branch(es): 2 (2-3).")                          # T14c
     with pytest.warns(PfcWarning) as rec:
         w = checks.check_attenuation([0.9, 1 + 1e-6, 1 + 1e-12], LAB, 1e-9)
     m = str(rec[0].message)

@@ -32,7 +32,9 @@ function varargout = pfc_checks(action, varargin)
 %     reactive circulating flows are allowed).
 %   W = PFC_CHECKS('attenuation', A, LABELS, SLACK)
 %     Active attenuation A = Pt./Pf must lie in (0, 1 + SLACK]: error
-%     pfc:apfc:nonPositiveAttenuation for A <= 0 (a branch fed from both
+%     pfc:apfc:nonPositiveAttenuation for A <= 0 (a defensive check: after the
+%     terminal classification of apfc.m a carrier has A > 0 unless a terminal
+%     flow equals the tolerance exactly; formerly: a branch fed from both
 %     ends), warning pfc:apfc:attenuationAboveOne for A > 1 + SLACK.
 %   PFC_CHECKS('inflow', TOTAL, F, TOL_DIV, KIND)
 %     Error pfc:<KIND>:zeroInflow, naming the buses, if the total inflow
@@ -213,8 +215,8 @@ function w = check_attenuation(a, labels, slack)
 w = {};
 bad = find(a <= 0);
 if ~isempty(bad)
-    error('pfc:apfc:nonPositiveAttenuation', ['Active attenuation Pt/Pf <= 0 (branch fed from both ends, ' ...
-        'not handled) for branch(es): %s.'], strjoin(labels(bad).', ', '));
+    error('pfc:apfc:nonPositiveAttenuation', ['Active attenuation Pt/Pf <= 0 (terminal flow at the tolerance; ' ...
+        'check the input) for branch(es): %s.'], strjoin(labels(bad).', ', '));
 end
 hi = find(a > 1 + slack);
 if ~isempty(hi)

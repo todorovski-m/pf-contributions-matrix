@@ -124,7 +124,7 @@ def check_attenuation(a, labels, slack):
     bad = np.where(a <= 0)[0]
     if bad.size:
         raise PfcError("pfc:apfc:nonPositiveAttenuation",
-                       "Active attenuation Pt/Pf <= 0 (branch fed from both ends, not handled) for branch(es): %s."
+                       "Active attenuation Pt/Pf <= 0 (terminal flow at the tolerance; check the input) for branch(es): %s."
                        % ", ".join(labels[k] for k in bad))
     hi = np.where(a > 1 + slack)[0]
     if hi.size:
