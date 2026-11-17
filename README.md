@@ -146,7 +146,7 @@ batch_solve;
 | `attenuation_range` | smallest and largest attenuation factor of the physical branches |
 | `removed` | numbers of removed branches and generators |
 | `flipped_branches` | number of branches whose orientation was reversed |
-| `converted` | numbers of converted elements (negative demand to source, negative generation to demand; in `rpfc` also inductive bus shunts, Case-2 and Case-3 branches with both terminals non-zero, inductive transformer shunts), and `zero_terminal_demands`, `zero_terminal_sources`: the branches with exactly one zero terminal that became one terminal demand or one terminal source (see "Terminal Classification"; `zero_terminal_sources` is always 0 in `apfc`) |
+| `converted` | numbers of converted elements (negative demand to source, negative generation to demand; in `rpfc` also inductive bus shunts, Case-2 and Case-3 branches with both terminals non-zero, inductive transformer shunts), and `zero_terminal_demands`, `zero_terminal_sources`: the branches with exactly one zero terminal that became one terminal demand or one terminal source (see "Terminal Classification"; `zero_terminal_sources` is always 0 in `apfc`); in `apfc` also `case2_branches_to_demands`, the branches fed from both ends (pattern (+,-)) that became two terminal demands |
 | `acyclic`, `spectral_radius` | acyclicity of the flow digraph (Kahn's topological sort) and the spectral radius of N (exactly 0 for an acyclic digraph) |
 | `warnings` | identifiers of the warnings issued |
 | `negative_series_flow` | `rpfc` only: `count` and `branches` (index in the returned `mpc.branch` and bus pair) of the branches with a negative series flow |
@@ -184,8 +184,8 @@ The pattern of the signs of the two terminal flows decides how a branch enters t
 |---|---|---|
 | (+,+) | carrier | carrier (Case 1) |
 | (-,-) | reversed, then carrier | reversed, then carrier |
-| (+,-) | error `pfc:apfc:nonPositiveAttenuation` | Case 2: two terminal demands (rows `C2_b`) |
-| (-,+) | reversed, then error `pfc:apfc:nonPositiveAttenuation` | Case 3: two terminal sources (columns `E_i_j_f`, `E_i_j_t`) |
+| (+,-) | two terminal demands, PF at the from bus and -PT at the to bus (rows `C2_b`; both buses supply a branch that only absorbs its own loss) | Case 2: two terminal demands (rows `C2_b`) |
+| (-,+) | error `pfc:apfc:negativeLoss` (active power delivered at both ends) | Case 3: two terminal sources (columns `E_i_j_f`, `E_i_j_t`) |
 | (+,0) | one terminal demand PF at the from bus (row `C2_b`) | Case 2 with the zero terminal omitted: one demand QF at the from bus (row `C2_b`) |
 | (0,-) | one terminal demand -PT at the to bus (row `C2_b`) | Case 2 with the zero terminal omitted: one demand -QT at the to bus (row `C2_b`) |
 | (-,0) | error `pfc:apfc:negativeLoss` | Case 3 with the zero terminal omitted: one source -QF at the from bus (column `E_i_j_f`, row `L_{f.i-j}`) |
@@ -195,7 +195,7 @@ The pattern of the signs of the two terminal flows decides how a branch enters t
 - **Shunt rules.** A one-zero branch in RPFC follows the shunt rules of its case: a Case-2 member gets no transformer-shunt rows (`Tf_b`, `Tt_b`); a Case-3 member keeps them.
 - **Robustness.** Such a branch is never reversed and its result does not depend on the sign of a residue at its zero end.
 - **Row and column order:**
-  - APFC: the terminal demands follow the loads and the generators with negative output; first the from-terminals, then the to-terminals.
+  - APFC: the terminal demands follow the loads and the generators with negative output; first the from-terminals (of the (+,0) and (+,-) branches), then the to-terminals (of the (0,-) and (+,-) branches), each in branch order.
   - RPFC: the Case-2 demands are first the from-terminals of all members, then their to-terminals. A Case-3 member contributes one column in its place, and its single row is appended with the other Case-3 rows.
 - **Other branches:** every branch with both terminals non-zero keeps the exact-sign tests above.
 
@@ -220,7 +220,7 @@ The checks are in `pfc_checks.m` and use identifiers of the form `pfc:...`. They
 | Error (results not valid) | cyclic active digraph with spectral radius of N at or above 1 | `pfc:apfc:spectralRadius` |
 | | cyclic reactive digraph with spectral radius of N at or above 1 (the sufficient condition for the Neumann series is not met) | `pfc:rpfc:spectralRadius` |
 | | active attenuation at or below 0 (a defensive check; reachable only by a terminal flow equal to the tolerance, so the message asks to check the input) | `pfc:apfc:nonPositiveAttenuation` |
-| | active power delivered at one end of a branch whose other end carries zero flow (negative loss; patterns (0,+) and (-,0), see "Terminal Classification") | `pfc:apfc:negativeLoss` |
+| | active power delivered at one end of a branch whose other end carries zero flow, or at both ends (negative loss; patterns (0,+), (-,0) and (-,+), see "Terminal Classification") | `pfc:apfc:negativeLoss` |
 | | total inflow below `tol_div` at a bus with an outgoing branch | `pfc:apfc:zeroInflow`, `pfc:rpfc:zeroInflow` |
 | | to-end shunt self-term of a reactive carrier below `-tol_div` (it would not be propagated; cannot occur for a valid carrier, see `rpfc.m`) | `pfc:rpfc:negativeSelfTerm` |
 | | invalid input, unknown option, unsolved or non-converged power flow | `pfc:options:...`, `pfc:input:...`, `pfc:runpf:notConverged` |
@@ -239,9 +239,7 @@ What each check does:
 
 Not checked: a spectral radius close to (but below) 1, and a near-singular A. `diag.spectral_radius` and `diag.condest_A` report the values.
 
-**Limitations.**
-- **Negative loss (APFC).** A branch with one zero terminal that delivers active power at its other end, patterns (0,+) and (-,0), is an error (`pfc:apfc:negativeLoss`), not a source. Such a branch generates active power: in a MATPOWER case this means a negative series resistance in the data. The message names the branches.
-- **Fed from both ends (APFC).** A branch whose two active terminal flows are both non-zero and draw power from both buses, pattern (+,-), remains the error `pfc:apfc:nonPositiveAttenuation`. It occurs where a branch carries almost no active power and its loss is larger than the transfer.
+**Limitations.** In the terminal classification only the negative-loss patterns remain errors. A branch that delivers active power at one end with zero flow at the other, or at both ends (patterns (0,+), (-,0) and (-,+)), is the error `pfc:apfc:negativeLoss`, not a source. Such a branch generates active power: in a MATPOWER case this means a negative series resistance in the data. The message names the branches. The attenuation check (`pfc:apfc:nonPositiveAttenuation`) stays as a defensive check; it can only be reached by a terminal flow equal to the tolerance.
 
 ## Negative Reactive Attenuation in Standard Cases
 
@@ -375,13 +373,15 @@ zsh tests/make_reference.sh       # regenerate reference_results/
 ```
 
 `tests/run_tests.sh` runs:
-- the unit tests in `tests/unit/` (options and input forms, the checks with crafted inputs, the diagnostics of all test cases, and the terminal classification: the nine sign patterns, the dead-end cases at the from side and at the to side, invariance to a perturbation of the zero terminal, and the equivalence of a dead-end branch with the terminal injection it represents);
+- the unit tests in `tests/unit/` (options and input forms, the checks with crafted inputs, the diagnostics of all test cases, and the terminal classification: the nine sign patterns, the dead-end cases at the from side and at the to side, invariance to a perturbation of the zero terminal, the equivalence of a dead-end branch with the terminal injection it represents, and the branches fed from both ends with their equivalence with two loads);
 - the comparison of the active dead ends with the earlier iterative method (`tests/dead_end_equivalence.py`);
 - the comparison with the earlier iterative method on in-memory results (cells and row sums within 1e-10);
 - the comparison with `paper_results/`, where only the documented differences of version 2.0 are allowed;
 - the regeneration of `reference_results/`, which must match the committed files byte for byte.
 
 The synthetic case `tests/cases_synthetic/syn9_carrier_tap.m` (case9 with tap 1.05 on line 8-9, which stays a reactive carrier with an off-nominal tap and line charging) is run by `apfc.m` and `rpfc.m` and by the Python port, but it is not compared with the earlier iterative method: that method's preprocessing (`my_runpf.m`) computes the from-end shunt flow of such a line with B/2 instead of B/(2·tap²), so it disagrees there (see "Python Port"). The case list of that comparison is given explicitly in `tests/run_tests.sh`.
+
+The synthetic case `tests/cases_synthetic/syn9_both_ends.m` adds to case9 a branch 2-8 (R = 0.2, X = 0.05, B = 2 pu) whose active power is supplied from both buses (pattern (+,-)). It is not compared with the earlier iterative method either: that method gives each of the branch's two rows twice its flow, so its own row sums differ from the flows there; every other row agrees.
 
 The synthetic cases `tests/cases_synthetic/syn9_dead_*.m` add to case9 a dead-end bus attached to bus 5 by a branch with line charging, with an inductive susceptance, or with a bus shunt at the dead end, at the from side and at the to side. They are not in that case list either: the earlier iterative method is not a reference for reactive dead ends (it does not finish, or its row sums differ from the flows). Their active part is compared with it by `tests/dead_end_equivalence.py`.
 
@@ -423,7 +423,7 @@ write_csv(table_q, "case9_rpfc.csv")            # the CSV layout of apfc.m/rpfc.
 
 `condest_A` is estimated with `scipy.sparse.linalg.onenormest` (seeded, so that two calls give the same value), and may differ from Matlab's `condest`. `Options(checks=False)` switches off the attenuation check, the warning `pfc:apfc:cyclic` and `condest_A` (which is then `None`). The zero-inflow, spectral-radius, negative-self-term and negative-loss guards are always on.
 
-**Terminal classification.** Phase (a) classifies the branches with one zero terminal as `apfc.m` and `rpfc.m` do (see "Terminal Classification"), and `info["converted"]` has `zero_terminal_demands` and `zero_terminal_sources`. The negative-loss error is raised at the start of phase (b), before the other checks.
+**Terminal classification.** Phase (a) classifies the branches with one zero terminal, and in APFC the branches fed from both ends, as `apfc.m` and `rpfc.m` do (see "Terminal Classification"). `info["converted"]` has `zero_terminal_demands` and `zero_terminal_sources`, and in APFC also `case2_branches_to_demands`. The negative-loss error is raised at the start of phase (b), before the other checks.
 
 **Tests.** `zsh python/run_tests.sh` runs the pytest tests (`python -B -m pytest -p no:cacheprovider`). If Octave is available, it first creates the synthetic exports and the Octave outputs in a scratch folder (`tests/export_synthetic.sh`, `tests/run_matrix.sh`), so that the port is compared with `apfc.m` and `rpfc.m` on every case. Without Octave, those tests are skipped and the runner prints their number. Set `PYTHON` to choose the interpreter.
 
