@@ -189,6 +189,32 @@ def old_with_iterations(data, kind, itermax, branch, timeout_s):
     return flows, table, m.group(2) == "True", int(m.group(1))
 
 
+# ---------------------------------------------------------------- memory estimate of the dense result tables
+
+def dense_bytes(prep, kind):
+    """Estimate of the memory of the dense arrays of one port run, 8 bytes per value: apfc the solution X (ne x ng)
+    and the table (nd + 2 nl rows, ng columns); rpfc the from-end and to-end blocks (ne x (ns + nl), twice) and the
+    table (nd + 2 nl + 2 n_case3 rows, ns + nl columns). The old method's dense array is of the same order."""
+    if kind == "apfc":
+        return 8 * (prep.ne * prep.ng + (prep.nd + 2 * prep.nl) * prep.ng)
+    cols = prep.ns + prep.nl
+    return 8 * (2 * prep.ne * cols + (prep.nd + 2 * prep.nl + 2 * prep.n_case3) * cols)
+
+
+def estimate_case(data, kind):
+    from pfc_matrix import Case, read_branch_params, prepare_active, prepare_reactive
+    case = Case.from_frames(data["bus"], data["gen"], data["branch"], data["case"], params=read_branch_params(data["path"]))
+    prep = (prepare_active if kind == "apfc" else prepare_reactive)(case, TOL)
+    return dense_bytes(prep, kind)
+
+
+def physical_memory():
+    try:
+        return int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True).stdout.strip())
+    except Exception:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+
+
 # ---------------------------------------------------------------- guard
 
 def port_flows(data, kind):
@@ -381,11 +407,29 @@ def run_series(a):
             rec["qsf_replaced"] = [{"row": int(r), "from": int(data["branch"].F_BUS.iloc[r]), "to": int(data["branch"].T_BUS.iloc[r]),
                                     "exported": a_, "rpfc_m": b_} for r, a_, b_ in zip(rows, q_old, q_new)]
         except Exception as e:        # the case cannot be loaded or the port rejects the input
-            rec["error"] = f"{type(e).__name__}: {getattr(e, 'identifier', '')} {e}"
+            rec["error"] = f"{type(e).__name__}: {getattr(e, 'identifier', '')} {str(e)[:300]}"
             rec["load_after"] = load_record(); per_case[c] = rec
+            cells.append({"case": c, "method": "all", "kind": "", "checks": "", "status": f"not timed ({rec['error']})"})
             continue
+        limit = a.mem_fraction * physical_memory()
         for kind in ("apfc", "rpfc"):
-            g = guard(data, kind, a.itermax, a.timeout, branch_old)
+            try:
+                est = estimate_case(data, kind)
+            except Exception as e:
+                cells.append({"case": c, "method": "all", "kind": kind, "checks": "",
+                              "status": f"not timed (port raises {getattr(e, 'identifier', type(e).__name__)})"})
+                continue
+            rec[f"dense_bytes_{kind}"] = est
+            if est > limit:
+                cells.append({"case": c, "method": "all", "kind": kind, "checks": "",
+                              "status": f"not timed (estimated dense tables {est} bytes > limit {int(limit)} bytes)"})
+                continue
+            try:
+                g = guard(data, kind, a.itermax, a.timeout, branch_old)
+            except Exception as e:
+                cells.append({"case": c, "method": "all", "kind": kind, "checks": "",
+                              "status": f"not timed (port raises {getattr(e, 'identifier', type(e).__name__)}: {str(e)[:200]})"})
+                continue
             guards.append(g)
             iters.append({"case": c, "kind": kind, "old_status": g["old_status"], "iterations": g["iterations"], "itermax": a.itermax})
             rec[f"n_e_{kind}"] = g["n_e"]
@@ -444,6 +488,8 @@ def main(argv=None):
     r.add_argument("--budget", type=float, default=30.0); r.add_argument("--min-rep", type=int, default=5)
     r.add_argument("--max-rep", type=int, default=200); r.add_argument("--warmup", type=int, default=2)
     r.add_argument("--smoke", action="store_true"); r.add_argument("--no-memory", dest="memory", action="store_false")
+    r.add_argument("--mem-fraction", type=float, default=0.5,
+                   help="skip a cell whose estimated dense tables exceed this fraction of the physical memory")
     m = sub.choices["memory"]
     m.add_argument("--case", required=True); m.add_argument("--method", choices=["port", "old"], required=True)
     m.add_argument("--kind", choices=["apfc", "rpfc"], required=True); m.add_argument("--checks", type=int, default=0)

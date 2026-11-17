@@ -91,3 +91,18 @@ def test_port_runner_phases():
     assert set(ph) == {"input", "prepare", "assemble", "solve", "table", "condest"} and all(v >= 0 for v in ph.values())
     _, ph = T.port_runner(data, "apfc", False)()
     assert "condest" not in ph
+
+
+def test_memory_limit_and_port_errors_skip_cells(tmp_path):
+    # a memory fraction of 1e-12 skips every cell of case9; the non-consecutive numbering of a case is recorded
+    T.main(["run", "--out", str(tmp_path / "r"), "--cases", "case9", "--budget", "0", "--min-rep", "1", "--max-rep", "1",
+            "--warmup", "0", "--timeout", "30", "--no-memory", "--mem-fraction", "1e-12", "--smoke"])
+    import csv
+    st = [r["status"] for r in csv.DictReader(open(tmp_path / "r" / "cells.csv"))]
+    assert len(st) == 2 and all(x.startswith("not timed (estimated dense tables") for x in st)
+
+
+def test_dense_bytes_formula():
+    class P: ne, ng, nd, nl, ns, n_case3 = 10, 2, 3, 4, 5, 1
+    assert T.dense_bytes(P, "apfc") == 8 * (10 * 2 + (3 + 8) * 2)
+    assert T.dense_bytes(P, "rpfc") == 8 * (2 * 10 * 9 + (3 + 8 + 2) * 9)

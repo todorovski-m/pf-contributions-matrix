@@ -6,3 +6,4 @@ cases_experimental/
 # Python port
 python/.venv/
 __pycache__/
+benchmark/inputs_large/
