@@ -50,6 +50,12 @@ function varargout = pfc_checks(action, varargin)
 %     above TOL_DIV are propagated downstream, so a negative one would leave
 %     the downstream row sums unequal to the flows. For a valid carrier the
 %     error cannot occur (see the comment at the self-terms in rpfc.m).
+%   PFC_CHECKS('negative_loss', LABELS_TO, LABELS_FROM)
+%     Error pfc:apfc:negativeLoss for active power delivered at one end of
+%     a branch whose other end carries zero flow (sign by tol): LABELS_TO
+%     names the branches with pattern (0,+) (delivered at the to-end, zero
+%     from-end flow), LABELS_FROM those with pattern (-,0) (delivered at the
+%     from-end, zero to-end flow). No error if both are empty.
 %
 %   W is a cell array of the warning identifiers that were issued.
 
@@ -70,6 +76,8 @@ switch action
         [varargout{1}, varargout{2}] = check_series_flow(varargin{:});
     case 'selfterm'
         check_selfterm(varargin{:});
+    case 'negative_loss'
+        check_negative_loss(varargin{:});
     otherwise
         error('pfc:checks:unknownAction', 'pfc_checks: unknown action ''%s''.', action);
 end
@@ -231,6 +239,21 @@ if ~isempty(bad)
     error('pfc:rpfc:negativeSelfTerm', ['To-end shunt self-term below -%.3g (it would not be propagated, ' ...
         'and the downstream row sums would not equal the flows) for branch(es): %s.'], tol_div, ...
         strjoin(labels(bad).', ', '));
+end
+end
+
+function check_negative_loss(labels_to, labels_from)
+msg = {};
+if ~isempty(labels_to)
+    msg{end + 1} = sprintf(['Active power is delivered at the to-end of a branch with zero from-end flow ' ...
+        '(negative loss) for branch(es): %s.'], strjoin(labels_to(:).', ', '));
+end
+if ~isempty(labels_from)
+    msg{end + 1} = sprintf(['Active power is delivered at the from-end of a branch with zero to-end flow ' ...
+        '(negative loss) for branch(es): %s.'], strjoin(labels_from(:).', ', '));
+end
+if ~isempty(msg)
+    error('pfc:apfc:negativeLoss', '%s', strjoin(msg, ' '));
 end
 end
 

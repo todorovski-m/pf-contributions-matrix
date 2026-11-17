@@ -4,7 +4,7 @@
 # Usage (from the root of the matrix repository, with the submodule initialised):
 #     zsh tests/run_tests.sh
 #
-# 1. Unit tests in tests/unit/ (options and input forms, validity checks, diag output).
+# 1. Unit tests in tests/unit/ (options and input forms, validity checks, diag output, terminal classification).
 # 2. The acceptance of brief T12a: comparison with the old iterative method (pinned submodule) on
 #    in-memory results, with paper_results/ (legacy reference), and the row sums.
 # 3. Comparison with the end state of T12a (commit T12A_REF), regenerated from git history:
@@ -24,7 +24,7 @@ result() {   # result <name> <exit status> [detail]
 print "work folder: $WORK"
 
 # 1. unit tests
-for t in test_options test_checks test_diag; do
+for t in test_options test_checks test_diag test_terminal; do
   zsh tests/octave_in_scratch.sh $t > $WORK/$t.log 2>&1
   rc=$?
   grep -E '^(PASS|FAIL) ' $WORK/$t.log | while read -r line; do
@@ -42,6 +42,9 @@ result "apfc and rpfc on all cases under Octave" $? "see $WORK/run_matrix.log"
 # Cases compared with the old method: the default list of compare_old.py, given explicitly. The synthetic case
 # syn9_carrier_tap is not compared: the old pipeline computes the from-end shunt flow QSF of its tapped line with
 # B/2 instead of B/(2*tap^2) (my_runpf.m, known issue), so the old method disagrees with rpfc.m there.
+# The dead-end cases syn9_dead_* are not compared: compare_old.py compares both kinds of a case, and the old method
+# is not a reference for reactive dead ends (it does not finish or gives row errors, report T15a). Their active
+# part is compared with the old method by tests/dead_end_equivalence.py.
 OLD_CASES=case1,case9,case14,case24_ieee_rts,case30,case33,case118,tap_loop,syn9_neg_pd,syn9_neg_pg,syn9_neg_qd,syn9_neg_qg,syn9_case3_tap
 python3 -B tests/compare_old.py $WORK/new benchmark/inputs $WORK/syn_inputs --cases $OLD_CASES > $WORK/compare_old.md 2>&1
 result "against the old method (cells and row sums within 1e-10)" $? "$(tail -1 $WORK/compare_old.md)"
@@ -53,6 +56,8 @@ mkdir -p $WORK/t12a && git archive $T12A_REF | tar -x -C $WORK/t12a
 mkdir -p $WORK/t12a/tests/cases_synthetic && cp tests/cases_synthetic/*.m $WORK/t12a/tests/cases_synthetic/
 CASES=()
 for c in $(cd $WORK/new && ls *_apfc.csv | sed 's/_apfc.csv$//'); do
+  # the dead-end cases syn9_dead_* need the terminal classification of T15b, which the T12a code does not have
+  [[ $c == syn9_dead_* ]] && continue
   [[ -f $WORK/t12a/cases/$c.m || -f $WORK/t12a/tests/cases_synthetic/$c.m ]] && CASES+=($c)   # cases that existed at T12A_REF
 done
 ( cd $WORK/t12a && zsh tests/run_matrix.sh $WORK/t12a_out $CASES ) > $WORK/t12a_run.log 2>&1

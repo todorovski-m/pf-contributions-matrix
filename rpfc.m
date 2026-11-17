@@ -46,6 +46,19 @@ function [RPFC_tbl, mpc, info] = rpfc(casedata, opts)
 %       at to-end, handled as two loads.
 %     Case 3 (injects at both ends): negative at from-end and positive at
 %       to-end, treated as pure reactive sources.
+%   Branches with exactly one zero terminal (sign s(x) = + if x > tol, - if
+%   x < -tol, 0 otherwise, on QF and the delivered QT, before the flip; a
+%   dead-end branch that carries only its own charging or shunt power) are
+%   members of Case 2 or Case 3 with the zero terminal omitted:
+%     (+,0) one demand QF at the from bus, (0,-) one demand -QT at the to bus
+%       (rows C2_b, with the Case-2 shunt rules);
+%     (-,0) one source -QF at the from bus (column E_i_j_f, row L_{f.i-j}),
+%       (0,+) one source QT at the to bus (column E_i_j_t, row L_{t.i-j}),
+%       with the Case-3 shunt rules.
+%   Such a branch is never flipped and is not a carrier. DIAG.converted
+%   counts them in zero_terminal_demands and zero_terminal_sources; the
+%   counts case2_branches_to_demands and case3_branches_to_sources are those
+%   of the branches with both terminals non-zero.
 %
 %   Attenuation uses branch series flows after removing local shunt effects
 %   from the terminal measurements.
@@ -118,7 +131,21 @@ Qst = mpc.branch(:, QT) - Qe;
 % get no transformer-shunt demand (Tf_b, Tt_b). The test on the delivered
 % terminal flows here gives the same Case-2 set as the classification below:
 % the orientation flip never applies to a Case-2 branch.
-is_case2_branch = (mpc.branch(:, QF) > 0) & (mpc.branch(:, QT) < 0);
+% Branches with exactly one zero terminal (sign by tol on QF and the
+% delivered QT, before the flip): zt = 1 (+,0) and zt = 2 (0,-) are Case-2
+% members with the zero terminal omitted (one terminal demand); zt = 3 (-,0)
+% and zt = 4 (0,+) are Case-3 members with the zero terminal omitted (one
+% terminal source). zt = 0 for every other branch, which keeps the exact-sign
+% tests below. Such a branch is never flipped.
+sgn = @(x) (x > tol) - (x < -tol);
+s_f = sgn(mpc.branch(:, QF));
+s_t = sgn(mpc.branch(:, QT));
+zt = zeros(size(mpc.branch, 1), 1);
+zt(s_f > 0 & s_t == 0) = 1;
+zt(s_f == 0 & s_t < 0) = 2;
+zt(s_f < 0 & s_t == 0) = 3;
+zt(s_f == 0 & s_t > 0) = 4;
+is_case2_branch = ((mpc.branch(:, QF) > 0) & (mpc.branch(:, QT) < 0) & zt == 0) | zt == 1 | zt == 2;
 
 % Handle negative Qsf (inductive shunt at from-end): convert to extra demand
 i_neg_qsf       = Qsf < -tol & ~is_case2_branch;
@@ -137,12 +164,13 @@ i_zero = abs(mpc.branch(:, QF)) < tol & abs(mpc.branch(:, QT)) < tol;
 mpc.branch = mpc.branch(~i_zero, :);
 Qsf = Qsf(~i_zero);
 Qst = Qst(~i_zero);
+zt  = zt(~i_zero);
 
 i_zero_gen = abs(mpc.gen(:, QG)) < tol;
 mpc.gen = mpc.gen(~i_zero_gen, :);
 
 %% Flip branches where both QF < 0 and QT < 0
-i_flip = (mpc.branch(:, QF) < 0) & (mpc.branch(:, QT) < 0);
+i_flip = (mpc.branch(:, QF) < 0) & (mpc.branch(:, QT) < 0) & zt == 0;
 if any(i_flip)
     mpc.branch(i_flip, [F_BUS T_BUS]) = mpc.branch(i_flip, [T_BUS F_BUS]);
     tmp = mpc.branch(i_flip, QF);
@@ -154,35 +182,42 @@ if any(i_flip)
 end
 
 %% Case 3: injects at both ends (pure source)
-%  Remove from branch set; register as source columns.
-i_case3    = (mpc.branch(:, QF) < 0) & (mpc.branch(:, QT) > 0);
+%  Remove from branch set; register as source columns. Members with one zero
+%  terminal (zt = 3, 4) have only the source of their non-zero terminal: no
+%  column and no appended row for the zero terminal.
+i_case3    = ((mpc.branch(:, QF) < 0) & (mpc.branch(:, QT) > 0) & zt == 0) | zt == 3 | zt == 4;
 case3_fbus = mpc.branch(i_case3, F_BUS);
 case3_tbus = mpc.branch(i_case3, T_BUS);
 case3_QF   = -mpc.branch(i_case3, QF);   % injection into f-bus (positive)
 case3_QT   =  mpc.branch(i_case3, QT);   % injection into t-bus (positive)
+case3_hasf = zt(i_case3) ~= 4;           % from-end source present
+case3_hast = zt(i_case3) ~= 3;           % to-end source present
 case3_flab = arrayfun(@(a,b) sprintf('L_{f.%d-%d}',a,b), ...
-    case3_fbus, case3_tbus, 'UniformOutput', false);
+    case3_fbus(case3_hasf), case3_tbus(case3_hasf), 'UniformOutput', false);
 case3_tlab = arrayfun(@(a,b) sprintf('L_{t.%d-%d}',a,b), ...
-    case3_fbus, case3_tbus, 'UniformOutput', false);
+    case3_fbus(case3_hast), case3_tbus(case3_hast), 'UniformOutput', false);
 n_case3    = sum(i_case3);
+n_case3_zt = nnz(zt(i_case3) ~= 0);
 
 mpc.branch = mpc.branch(~i_case3, :);
 Qsf = Qsf(~i_case3);
 Qst = Qst(~i_case3);
+zt  = zt(~i_case3);
 
 %% Case 2: consumes from both ends
-%  Split into two load branches at f-bus and t-bus.
-i_case2 = (mpc.branch(:, QF) > 0) & (mpc.branch(:, QT) < 0);
-if any(i_case2)
-    c2_extra_bus = [mpc.branch(i_case2, F_BUS); mpc.branch(i_case2, T_BUS)];
-    c2_extra_Q   = [mpc.branch(i_case2, QF);   -mpc.branch(i_case2, QT)   ];
-    mpc.branch = mpc.branch(~i_case2, :);
-    Qsf = Qsf(~i_case2);
-    Qst = Qst(~i_case2);
-else
-    c2_extra_bus = [];
-    c2_extra_Q   = [];
-end
+%  Split into two load branches at f-bus and t-bus: first the from-terminals
+%  of all members, then their to-terminals. Members with one zero terminal
+%  (zt = 1, 2) have only the demand of their non-zero terminal.
+i_case2 = ((mpc.branch(:, QF) > 0) & (mpc.branch(:, QT) < 0) & zt == 0) | zt == 1 | zt == 2;
+c2_hasf = i_case2 & zt ~= 2;
+c2_hast = i_case2 & zt ~= 1;
+c2_extra_bus = [mpc.branch(c2_hasf, F_BUS); mpc.branch(c2_hast, T_BUS)];
+c2_extra_Q   = [mpc.branch(c2_hasf, QF);   -mpc.branch(c2_hast, QT)   ];
+n_case2_zt   = nnz(i_case2 & zt ~= 0);
+n_case2_both = nnz(i_case2 & zt == 0);
+mpc.branch = mpc.branch(~i_case2, :);
+Qsf = Qsf(~i_case2);
+Qst = Qst(~i_case2);
 
 nl   = size(mpc.branch, 1);
 nb   = size(mpc.bus, 1);
@@ -230,8 +265,12 @@ n_qd       = numel(Qd_src);
 
 % Case 3 end-injections, interleaved per branch: [f_1; t_1; f_2; t_2; ...],
 % the same order as the column names (E_i_j_f, E_i_j_t) and the appended rows
+% (the terminal of a member with one zero terminal is omitted)
 case3_bus = reshape([case3_fbus, case3_tbus].', [], 1);
 case3_Q   = reshape([case3_QF,   case3_QT  ].', [], 1);
+case3_has = reshape([case3_hasf, case3_hast].', [], 1);
+case3_bus = case3_bus(case3_has);
+case3_Q   = case3_Q(case3_has);
 src_bus = [src_bus_g;       src_bus_qs;  src_bus_qd;  case3_bus];
 Qsrc    = [Qg_src;          Qs_src;      Qd_src;      case3_Q  ];
 ns      = numel(Qsrc);
@@ -331,9 +370,20 @@ end
 for i = 1:n_qd
     src_names{ng+n_qs+i} = sprintf('D_%d', src_bus_qd(i));
 end
+% Case-3 columns: per member E_i_j_f (if present), then E_i_j_t (if present);
+% case3_colf(i), case3_colt(i) are the column indices (0 if absent)
+case3_colf = zeros(n_case3, 1);
+case3_colt = zeros(n_case3, 1);
+c = n_pre;
 for i = 1:n_case3
-    src_names{n_pre+2*i-1} = sprintf('E_%d_%d_f', case3_fbus(i), case3_tbus(i));
-    src_names{n_pre+2*i  } = sprintf('E_%d_%d_t', case3_fbus(i), case3_tbus(i));
+    if case3_hasf(i)
+        c = c + 1; case3_colf(i) = c;
+        src_names{c} = sprintf('E_%d_%d_f', case3_fbus(i), case3_tbus(i));
+    end
+    if case3_hast(i)
+        c = c + 1; case3_colt(i) = c;
+        src_names{c} = sprintf('E_%d_%d_t', case3_fbus(i), case3_tbus(i));
+    end
 end
 self_names = arrayfun(@(i) sprintf('E_%d_%d_s', f(i), t(i)), ...
     (1:nl)', 'UniformOutput', false);
@@ -397,11 +447,16 @@ row_labels = [d_labels; lf_labels; lt_labels];
 % Append Case 3 branch rows (each end sourced entirely by that branch's injection)
 n_tot = ns + nl;
 if n_case3 > 0
-    c3f_data = zeros(n_case3, n_tot);
-    c3t_data = zeros(n_case3, n_tot);
-    for i = 1:n_case3
-        c3f_data(i, n_pre+2*i-1) = -case3_QF(i);
-        c3t_data(i, n_pre+2*i  ) =  case3_QT(i);
+    % from-end rows of the members with a from-end source, then the to-end rows
+    i_f = find(case3_hasf);
+    i_t = find(case3_hast);
+    c3f_data = zeros(numel(i_f), n_tot);
+    c3t_data = zeros(numel(i_t), n_tot);
+    for k = 1:numel(i_f)
+        c3f_data(k, case3_colf(i_f(k))) = -case3_QF(i_f(k));
+    end
+    for k = 1:numel(i_t)
+        c3t_data(k, case3_colt(i_t(k))) =  case3_QT(i_t(k));
     end
     RPFC_data    = [RPFC_data;    c3f_data; c3t_data   ];
     row_labels = [row_labels; case3_flab; case3_tlab];
@@ -430,10 +485,12 @@ info.converted = struct( ...
     'negative_generation_to_demand', numel(d_bus_qgneg), ...
     'negative_demand_to_source', n_qd, ...
     'inductive_bus_shunt_to_demand', numel(d_bus_qsneg), ...
-    'case2_branches_to_demands', numel(c2_extra_bus) / 2, ...
-    'case3_branches_to_sources', n_case3, ...
+    'case2_branches_to_demands', n_case2_both, ...
+    'case3_branches_to_sources', n_case3 - n_case3_zt, ...
     'inductive_from_end_shunt_to_demand', numel(extra_d_bus_qsf), ...
-    'inductive_to_end_shunt_to_demand', numel(extra_d_bus_qst));
+    'inductive_to_end_shunt_to_demand', numel(extra_d_bus_qst), ...
+    'zero_terminal_demands', n_case2_zt, ...
+    'zero_terminal_sources', n_case3_zt);
 info.acyclic = acyclic;
 info.spectral_radius = rho;
 info.negative_series_flow = struct('count', numel(i_ser), 'branches', {br_labels(i_ser).'});
