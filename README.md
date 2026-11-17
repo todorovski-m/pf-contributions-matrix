@@ -352,7 +352,49 @@ zsh tests/make_reference.sh       # regenerate reference_results/
 - the comparison with `paper_results/`, where only the documented differences of version 2.0 are allowed;
 - the regeneration of `reference_results/`, which must match the committed files byte for byte.
 
+The synthetic case `tests/cases_synthetic/syn9_carrier_tap.m` (case9 with tap 1.05 on line 8-9, which stays a reactive carrier with an off-nominal tap and line charging) is run by `apfc.m` and `rpfc.m` and by the Python port, but it is not compared with the earlier iterative method: that method's preprocessing (`my_runpf.m`) computes the from-end shunt flow of such a line with B/2 instead of B/(2·tap²), so it disagrees there (see "Python Port"). The case list of that comparison is given explicitly in `tests/run_tests.sh`.
+
 **Matlab check.** In Matlab, from the root of the repository and without `tests/octave_shims` on the path, run `matlab_check('/some/output/folder')`. It runs both functions on case9, case118 and case24_ieee_rts, writes the CSV files with Matlab's `writetable`, and prints the label agreement and the maximum differences against the Octave results in `tests/octave_results/`. It has not been run, because Matlab was not available.
+
+## Python Port
+
+`python/pfc_matrix` is a Python port of `apfc.m`, `rpfc.m` and `pfc_checks.m`. It reads the same exported inputs as the earlier iterative method: the `results.mat` files written by `my_runpf.m` (`benchmark/inputs/`), loaded with `load_results` of `external/iterative-method/power_flow.py`. It does not run a power flow, and the package does not import the iterative method.
+
+**Installation.** Python 3.10 with numpy, scipy and pandas; networkx, matplotlib and pytest for the tests. The versions used are in `python/requirements.txt`. No virtual environment is needed; with an existing Python, `python -m pip install -r python/requirements.txt` installs them.
+
+**API.**
+
+```python
+import sys; sys.path.insert(0, "python")
+from pfc_matrix import Case, read_branch_params, apfc, rpfc, write_csv, Options
+bus, gen, branch, _ = load_results("benchmark/inputs/case9.mat")   # from external/iterative-method/power_flow.py
+case = Case.from_frames(bus, gen, branch, "case9", params=read_branch_params("benchmark/inputs/case9.mat"))
+table, info = apfc(case)                        # pandas DataFrame (index "Line") and dict
+table_q, info_q = rpfc(case, Options(tol=1e-6, tol_div=1e-9))
+write_csv(table_q, "case9_rpfc.csv")            # the CSV layout of apfc.m/rpfc.m, %.17g
+```
+
+- `Case.from_frames(bus, gen, branch, name, params=None)` copies the DataFrames and checks the columns and the bus numbering (1..nb). `params` holds BR_R, BR_X, BR_B and baseMVA, which `load_results` drops. `read_branch_params(path)` reads them from the same `.mat` file, and `Case.from_frames` checks that its rows align with the branch table. `apfc` does not need them; `rpfc` does, because it computes the branch shunt flows as `rpfc.m` does.
+- `apfc(case, options=None, tol=None, tol_div=None)` and `rpfc(...)` return `(table, info)`. The table has the row labels, column labels, order and values of the CSV files of `apfc.m` and `rpfc.m`. `info` has every field of `diag` under the same name, plus `solver` and, for `rpfc`, `self_toend`.
+- `info["removed"]["branches"]` counts the branches removed from the exported input. It can be smaller than in `diag` by the branches that `my_runpf.m` deleted before the export (all four flows below 1e-4).
+- `Options(tol=1e-6, tol_div=1e-9, write=True, solved=False, name='', checks=True)` has the names and defaults of `opts`. `write` and `solved` have no effect: the port never writes files (use `write_csv`), and its input is always solved. The keyword arguments `tol` and `tol_div` win over the object. Unknown names and invalid values raise `PfcError` (`pfc:options:unknownField`, `pfc:options:value`).
+
+**Phases.** Each method runs four functions in order, none of which prints, times or writes a file:
+- `prepare_active` or `prepare_reactive`: preprocessing and the index and flow arrays;
+- `assemble_active` or `assemble_reactive`: the sparse matrices N, A and B (and the self-term right-hand side), with the validity checks;
+- `solve_active` or `solve_reactive`: one SuperLU factorisation of A, used for all right-hand sides;
+- `build_active_table` or `build_reactive_table`: the output table and its labels.
+
+**Checks and identifiers.** `pfc_matrix.checks` ports `pfc_checks.m`, with the same identifiers and messages. Errors raise `PfcError` (a `ValueError`; the identifier is in `.identifier`). Warnings are collected in `info["warnings"]` and issued with `warnings.warn` as `PfcWarning`. The identifiers:
+- errors: `pfc:apfc:spectralRadius`, `pfc:rpfc:spectralRadius`, `pfc:apfc:nonPositiveAttenuation`, `pfc:apfc:zeroInflow`, `pfc:rpfc:zeroInflow`, `pfc:rpfc:negativeSelfTerm`, `pfc:options:...`, `pfc:input:casedata` and `pfc:input:notSolved`;
+- errors that exist only in Python: `pfc:input:columns`, `pfc:input:busNumbering` and `pfc:input:branchParams`;
+- warnings: `pfc:apfc:cyclic` and `pfc:apfc:attenuationAboveOne`.
+
+`condest_A` is estimated with `scipy.sparse.linalg.onenormest` (seeded, so that two calls give the same value), and may differ from Matlab's `condest`. `Options(checks=False)` switches off the attenuation check, the warning `pfc:apfc:cyclic` and `condest_A` (which is then `None`). The zero-inflow, spectral-radius and negative-self-term guards are always on.
+
+**Tests.** `zsh python/run_tests.sh` runs the pytest tests (`python -B -m pytest -p no:cacheprovider`). If Octave is available, it first creates the synthetic exports and the Octave outputs in a scratch folder (`tests/export_synthetic.sh`, `tests/run_matrix.sh`), so that the port is compared with `apfc.m` and `rpfc.m` on every case. Without Octave, those tests are skipped and the runner prints their number. Set `PYTHON` to choose the interpreter.
+
+**Known issue of the earlier iterative pipeline.** `my_runpf.m` computes the from-end shunt flow QSF of a branch with B/2 instead of B/(2·tap²), which matters only for a branch with both an off-nominal tap and line charging. The port therefore does not use the exported QSF and QST, but computes the shunt flows as `rpfc.m` does.
 
 ## Related Work
 
