@@ -11,6 +11,7 @@ import scipy.sparse as sp
 from conftest import MATRIX_DIR
 from pfc_matrix import Case, apfc, assemble_active, build_active_table, prepare_active, solve_active, write_csv
 from pfc_matrix.labels import unique_labels
+from pfc_matrix.options import PfcWarning
 
 
 def make_case(buses, gens, branches, name="t"):
@@ -72,7 +73,9 @@ def test_branch_with_both_flows_below_tol_is_deleted():
     assert list(table.index).count("L_{f.2-3}") == 1 and "L_{f.2-3}_2" not in table.index
     # only one end below tol: kept
     branches = BASE_BRANCHES + [(2, 3, 5e-7, 2e-6)]
-    _, info = apfc(make_case({1: 0, 2: 60, 3: 40}, [(1, 100)], branches))
+    # the kept branch has the attenuation 2e-6 / 5e-7 = 4 > 1: apfc.m warns, and so does the port (T13c)
+    with pytest.warns(PfcWarning, match="exceeds 1"):
+        _, info = apfc(make_case({1: 0, 2: 60, 3: 40}, [(1, 100)], branches))
     assert info["removed"]["branches"] == 0 and info["n_branch"] == 4
 
 
