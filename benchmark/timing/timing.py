@@ -192,6 +192,14 @@ class _Collect(logging.Handler):
         self.lines.append(r.getMessage())
 
 
+def error_text(e):
+    """'<type>: <message> (at <file>:<line> in <function>)' of the innermost frame of an exception."""
+    import traceback
+    tb = traceback.extract_tb(e.__traceback__)
+    at = f" (at {os.path.basename(tb[-1].filename)}:{tb[-1].lineno} in {tb[-1].name})" if tb else ""
+    return f"{type(e).__name__}: {str(e)[:200]}{at}"
+
+
 def old_with_iterations(data, kind, itermax, branch, timeout_s):
     """One untimed run of the old method with an INFO collector (no output), for the iteration count and the guard.
     Returns (flows, table, done, iterations) or raises RunTimeout."""
@@ -301,6 +309,9 @@ def guard(data, kind, itermax, timeout_s, branch_old):
         out.update(cmpd)
     except RunTimeout:
         out["old_status"] = "did not finish (time-out)"; out["iterations"] = None
+        cmpd = None
+    except Exception as e:          # the old method raises: the port is still timed, the old method is not
+        out["old_status"] = f"did not finish (error: {error_text(e)})"; out["iterations"] = None
         cmpd = None
     ok = out["port_equal_public"] and out["port_rowsum"] <= GUARD_TOL
     if cmpd is not None:

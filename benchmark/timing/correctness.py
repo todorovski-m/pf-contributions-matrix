@@ -239,6 +239,9 @@ def main():
                 except T.RunTimeout:
                     el = time.monotonic() - t0
                     status = "did not finish (time-out)" if el >= a.timeout - 1 else "did not finish (budget)"
+                except Exception as e:      # the old method raises (for example a division by zero in its code)
+                    el = time.monotonic() - t0
+                    status = f"did not finish (error: {T.error_text(e)})"
                 spent += el
         ok = rs <= CELL_TOL and row["det"]
         if status == "finished":

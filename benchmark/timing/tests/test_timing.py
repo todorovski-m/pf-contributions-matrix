@@ -85,6 +85,18 @@ def test_guard_passes_and_fails_on_a_wrong_input():
     assert not bad["ok"] and bad["max_cell"] > 1e-3
 
 
+def test_guard_records_an_error_of_the_old_method(monkeypatch):
+    data = C.load("case9", C.input_dirs())
+    branch_old, _, _, _ = C.correct_qsf(data)
+
+    def raising(*a, **k):
+        return 1 / 0
+    monkeypatch.setattr(T, "old_with_iterations", raising)
+    g = T.guard(data, "apfc", 10000, 60, branch_old)
+    assert g["ok"] and g["iterations"] is None
+    assert g["old_status"].startswith("did not finish (error: ZeroDivisionError: division by zero (at test_timing.py:")
+
+
 def test_port_runner_phases():
     data = C.load("case9", C.input_dirs())
     table, ph = T.port_runner(data, "rpfc", True)()
