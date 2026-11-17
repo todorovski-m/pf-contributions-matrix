@@ -64,8 +64,21 @@ def scan_case(name, dirs, raw):
         np.add.at(inflow, p0.t, p0.Pt); np.add.at(inflow, p0.g, p0.Pg)
         has_out = np.zeros(p0.nb + 1, bool); has_out[p0.f] = True
         row["zero_inflow_buses_apfc"] = int((has_out & (inflow < 1e-9)).sum())
+        # terminal classification (T15b): branches with one zero terminal
+        row["negative_loss_branches_apfc"] = len(p0.negative_loss_to) + len(p0.negative_loss_from)
+        row["zero_terminal_demands_apfc"] = p0.converted["zero_terminal_demands"]
     except Exception as e:
         row["zero_inflow_buses_apfc"] = f"not computed ({getattr(e, 'identifier', type(e).__name__)})"
+    try:      # the same for the RPFC zero-inflow guard, and the terminal classification of RPFC
+        q0 = prepare_reactive(case, TOL)
+        inflow = np.zeros(q0.nb + 1)
+        np.add.at(inflow, q0.t, q0.Qt); np.add.at(inflow, q0.src, q0.Qsrc)
+        has_out = np.zeros(q0.nb + 1, bool); has_out[q0.f] = True
+        row["zero_inflow_buses_rpfc"] = int((has_out & (inflow < 1e-9)).sum())
+        row["zero_terminal_demands_rpfc"] = q0.converted["zero_terminal_demands"]
+        row["zero_terminal_sources_rpfc"] = q0.converted["zero_terminal_sources"]
+    except Exception as e:
+        row["zero_inflow_buses_rpfc"] = f"not computed ({getattr(e, 'identifier', type(e).__name__)})"
     for kind, prep_f, asm in (("apfc", prepare_active, lambda p: assemble_active(p, 1e-9, True)),
                               ("rpfc", prepare_reactive, lambda p: assemble_reactive(p, TOL, 1e-9))):
         try:
@@ -131,7 +144,8 @@ def main():
         r["status"] = usability(r, limit)
     cols = ["case", "status", "buses", "branches", "generators", "buses_numbered_1_to_nb", "tap_ne_1", "br_b_ne_0", "tap_and_br_b",
             "tap_and_br_b_carriers", "deleted_by_my_runpf", "case2_branches", "case3_branches", "port", "zero_inflow_buses_apfc",
-            "negative_series_flow_carriers", "n_e_apfc", "nnz_N_apfc", "acyclic_apfc", "spectral_radius_apfc", "condest_A_apfc",
+            "zero_inflow_buses_rpfc", "negative_loss_branches_apfc", "zero_terminal_demands_apfc", "zero_terminal_demands_rpfc",
+            "zero_terminal_sources_rpfc", "negative_series_flow_carriers", "n_e_apfc", "nnz_N_apfc", "acyclic_apfc", "spectral_radius_apfc", "condest_A_apfc",
             "n_e_rpfc", "nnz_N_rpfc", "acyclic_rpfc", "spectral_radius_rpfc", "condest_A_rpfc",
             "dense_table_bytes_apfc", "dense_table_bytes_rpfc", "error_apfc", "error_rpfc"]
     lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
