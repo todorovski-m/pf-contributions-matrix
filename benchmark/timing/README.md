@@ -99,9 +99,75 @@ A case is `quiet` if the 1-minute load average before it is below 0.25 times the
 
 ## Large cases
 
-`export_large.sh` exports case300, case1354pegase, case2869pegase, case9241pegase, case_ACTIVSg2000 and case_ACTIVSg10k (MATPOWER 7.1) with the pipeline of `benchmark/export_inputs.sh`. A case that does not converge is dropped, not tuned. `scan.py` tabulates their properties. Not every exported case can be run by both methods:
-- the port, like `apfc.m`, needs buses numbered 1..nb;
-- `load_results` reads only the 13 standard bus columns;
-- the methods' guards and the memory of the dense tables also apply.
+### Export: renumbering and stripping
 
-`cells.csv` gives the reason for every case that is not timed.
+`export_large.sh` exports case300, case_ACTIVSg500, case1354pegase, case_ACTIVSg2000, case2383wp, case2869pegase,
+case3120sp, case_ACTIVSg10k and case9241pegase (MATPOWER 7.1) into `benchmark/inputs_large/<case>.mat` (git-ignored),
+with the pipeline of `benchmark/export_inputs.sh`. A case that does not converge is dropped, not tuned; `export_log.txt`
+records each case. Before the power flow, `prepare_case.m` changes two things in a scratch copy of the case:
+- **Renumbering:** the buses are renumbered 1..nb in the order of the bus table, and the bus numbers of the generators,
+  the branches and the area reference buses are mapped in the same way. The port, like `apfc.m`, needs buses numbered
+  1..nb; several large cases have other numbers. The mapping (old bus, new bus) is saved as `<case>_busmap.csv`, so
+  results can be mapped back.
+- **Stripping:** the bus, generator and branch matrices are cut to the standard MATPOWER columns (13, 21 and 13).
+  `load_results` reads only the standard columns, and the extra columns of some cases (for example market data) are
+  not used by the power flow.
+
+No MATPOWER file, no file of the submodule and `my_runpf.m` are changed.
+
+**Neutrality check.** `neutrality_check.m` runs the power flow of the original case and of the prepared case with the
+same options, maps the prepared one back, and writes to `benchmark/inputs_large/neutrality.csv` the largest absolute
+differences of VM, VA, PF, QF, PT and QT, the iteration counts, the success flags, and whether the mapping is a
+bijection onto 1..nb that maps every bus, generator and branch back. A prepared case is used only if all differences
+are zero, both power flows converge in the same number of iterations, and both flags are 1. The test
+`test_renumbering_of_the_export` (in `tests/test_timing.py`) checks the same on case9 with every bus number increased
+by 100.
+
+### Case and kind list
+
+`cases.py` (`LARGE_COMBOS`) lists the (case, kind) combinations that the scan (`scan.py`) marks usable, in order of
+size. A combination is left out if either method's input guard rejects it or its dense result tables do not fit:
+
+| case | APFC | RPFC | reason for an exclusion |
+|---|---|---|---|
+| case300 | yes | yes | |
+| case_ACTIVSg500 | yes | yes | |
+| case1354pegase | yes | yes | |
+| case_ACTIVSg2000 | yes | yes | |
+| case2383wp | yes | yes | |
+| case2869pegase | yes | yes | |
+| case3120sp | no | yes | APFC: `pfc:apfc:negativeLoss` (branches that deliver active power at both ends; the data have branches with negative series resistance) |
+| case_ACTIVSg10k | yes | no | RPFC: the estimated dense reactive tables are above the memory limit |
+| case9241pegase | no | no | APFC: `pfc:apfc:spectralRadius` (a circulating 2-cycle of gain 1 between two buses); RPFC: the estimated dense reactive tables are above the memory limit |
+
+The scan itself, with the counts per case, is produced by `scan.py`; `cells.csv` of a series gives the reason for
+every cell that is not timed.
+
+### Slow cells
+
+A single run (warm-up or recorded) longer than 30 s (`--slow`) makes the cell **slow**: no further warm-up run is
+made, exactly 3 repetitions are recorded (fewer only on a time-out), and the budget and the minimum number of
+repetitions do not apply. Slow cells are flagged in `cells.csv` and marked "(slow)" in `summary.md`. In
+`run_timing.sh` the time-out of a single run is 1800 s, so that the old method of the large cases can finish.
+
+### The series for publication
+
+On a quiet machine on mains power, from the root of the matrix repository:
+
+```sh
+zsh benchmark/timing/export_large.sh
+PYTHON=/Users/mirko/.pyenv/shims/python zsh benchmark/timing/run_timing.sh
+```
+
+Without `--smoke`, `--combos` or `--cases`, this runs every combination of `cases.py` (the 14 small cases with both
+kinds and every usable large combination whose export exists) with the defaults above. A run with `--smoke` is a test
+of the machinery and is labelled "smoke, not for publication".
+
+### Correctness before timing
+
+`correctness.py` compares, outside the timing, the port with the old method in memory on the large combinations
+(iteration cap 10000, a time-out per run and a total budget), and reports the row sums and the determinism of the
+port's tables. `octave_large.sh` (with `octave_exported.m`) runs `apfc.m` or `rpfc.m` under Octave on an exported
+solved power flow, for the comparison of the port with Octave. The old method is not a reference for the rows of
+RPFC dead-end branches and of APFC branches fed from both ends (pattern (+,−)); `correctness.py` excludes those rows
+and counts them.
