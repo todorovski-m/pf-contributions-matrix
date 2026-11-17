@@ -52,6 +52,8 @@ class ReactivePrep:
     case3_tbus: np.ndarray
     case3_QF: np.ndarray    # injection into the from-bus (positive)
     case3_QT: np.ndarray    # injection into the to-bus (positive)
+    case3_hasf: np.ndarray  # the member has a from-end source (False for a (0,+) member, T15b)
+    case3_hast: np.ndarray  # the member has a to-end source (False for a (-,0) member, T15b)
     removed: dict
     flipped_branches: int
     converted: dict
@@ -118,8 +120,17 @@ def prepare_reactive(case, tol=1e-6):
     F = br["F_BUS"].to_numpy(int); T = br["T_BUS"].to_numpy(int)
     QF = br["QF"].to_numpy(float); QT = br["QT"].to_numpy(float)   # [Q2] QT is the delivered flow
     Qsf, Qst = branch_shunt_flows(case)                               # [Q3]
+    # Terminal classification (T15b), before the flip, sign by tol: zt = 1 (+,0), 2 (0,-) are Case-2 members and
+    # zt = 3 (-,0), 4 (0,+) Case-3 members with the zero terminal omitted; zt = 0 keeps the exact-sign tests below
+    s_f = (QF > tol).astype(int) - (QF < -tol).astype(int)
+    s_t = (QT > tol).astype(int) - (QT < -tol).astype(int)
+    zt = np.zeros(len(QF), dtype=int)
+    zt[(s_f > 0) & (s_t == 0)] = 1
+    zt[(s_f == 0) & (s_t < 0)] = 2
+    zt[(s_f < 0) & (s_t == 0)] = 3
+    zt[(s_f == 0) & (s_t > 0)] = 4
     # [Q4] Case-2 mask on all branches; [Q5] inductive branch-end shunts become demands (before the deletion)
-    is_case2 = (QF > 0) & (QT < 0)
+    is_case2 = ((QF > 0) & (QT < 0) & (zt == 0)) | (zt == 1) | (zt == 2)
     i_neg_qsf = (Qsf < -tol) & ~is_case2
     extra_bus_qsf, extra_Q_qsf = F[i_neg_qsf], -Qsf[i_neg_qsf]
     Qsf = np.where(i_neg_qsf, 0.0, Qsf)
@@ -129,23 +140,28 @@ def prepare_reactive(case, tol=1e-6):
     # [Q6] deletion of branches and generators
     i_zero = (np.abs(QF) < tol) & (np.abs(QT) < tol)
     keep = ~i_zero
-    F, T, QF, QT, Qsf, Qst = F[keep], T[keep], QF[keep], QT[keep], Qsf[keep], Qst[keep]
+    F, T, QF, QT, Qsf, Qst, zt = F[keep], T[keep], QF[keep], QT[keep], Qsf[keep], Qst[keep], zt[keep]
     QG_all = gen["QG"].to_numpy(float)
     i_zero_gen = np.abs(QG_all) < tol
     gbus, QG = gen["GEN_BUS"].to_numpy(int)[~i_zero_gen], QG_all[~i_zero_gen]
     # [Q7] flip of the branches with both flows negative
-    flip = (QF < 0) & (QT < 0)
+    flip = (QF < 0) & (QT < 0) & (zt == 0)
     F, T = np.where(flip, T, F), np.where(flip, F, T)
     QF, QT = np.where(flip, -QT, QF), np.where(flip, -QF, QT)
     Qsf, Qst = np.where(flip, Qst, Qsf), np.where(flip, Qsf, Qst)
-    # [Q8] Case 3: injects at both ends -> two sources
-    c3 = (QF < 0) & (QT > 0)
+    # [Q8] Case 3: injects at both ends -> two sources (one for a member with a zero terminal)
+    c3 = ((QF < 0) & (QT > 0) & (zt == 0)) | (zt == 3) | (zt == 4)
     case3_fbus, case3_tbus, case3_QF, case3_QT = F[c3], T[c3], -QF[c3], QT[c3]
-    F, T, QF, QT, Qsf, Qst = F[~c3], T[~c3], QF[~c3], QT[~c3], Qsf[~c3], Qst[~c3]
-    # [Q9] Case 2: consumes at both ends -> two demands (all from-ends, then all to-ends)
-    c2 = (QF > 0) & (QT < 0)
-    c2_bus = np.r_[F[c2], T[c2]]
-    c2_Q = np.r_[QF[c2], -QT[c2]]
+    case3_hasf, case3_hast = zt[c3] != 4, zt[c3] != 3
+    n_case3_zt = int((zt[c3] != 0).sum())
+    F, T, QF, QT, Qsf, Qst, zt = F[~c3], T[~c3], QF[~c3], QT[~c3], Qsf[~c3], Qst[~c3], zt[~c3]
+    # [Q9] Case 2: consumes at both ends -> two demands (all from-ends, then all to-ends; one for a member with a
+    # zero terminal)
+    c2 = ((QF > 0) & (QT < 0) & (zt == 0)) | (zt == 1) | (zt == 2)
+    c2f, c2t = c2 & (zt != 2), c2 & (zt != 1)
+    c2_bus = np.r_[F[c2f], T[c2t]]
+    c2_Q = np.r_[QF[c2f], -QT[c2t]]
+    n_case2_zt, n_case2_both = int((c2 & (zt != 0)).sum()), int((c2 & (zt == 0)).sum())
     F, T, QF, QT, Qsf, Qst = F[~c2], T[~c2], QF[~c2], QT[~c2], Qsf[~c2], Qst[~c2]
     nl = len(F)
     # [Q10] demands
@@ -164,15 +180,16 @@ def prepare_reactive(case, tol=1e-6):
     i_qg_pos = QG > tol
     i_qs_pos = Qsh > tol
     i_qd_neg = QD < -tol
-    case3_bus = np.column_stack([case3_fbus, case3_tbus]).ravel()
-    case3_Q = np.column_stack([case3_QF, case3_QT]).ravel()
+    case3_has = np.column_stack([case3_hasf, case3_hast]).ravel()
+    case3_bus = np.column_stack([case3_fbus, case3_tbus]).ravel()[case3_has]
+    case3_Q = np.column_stack([case3_QF, case3_QT]).ravel()[case3_has]
     src_bus = np.r_[gbus[i_qg_pos], bus_i[i_qs_pos], bus_i[i_qd_neg], case3_bus].astype(int)
     Qsrc = np.r_[QG[i_qg_pos], Qsh[i_qs_pos], -QD[i_qd_neg], case3_Q]
     n_pre = int(i_qg_pos.sum() + i_qs_pos.sum() + i_qd_neg.sum())
     src_names = ([f"G_{b}" for b in gbus[i_qg_pos]] + [f"S_{b}" for b in bus_i[i_qs_pos]] +
                  [f"D_{b}" for b in bus_i[i_qd_neg]])
-    for a, b in zip(case3_fbus, case3_tbus):
-        src_names += [f"E_{a}_{b}_f", f"E_{a}_{b}_t"]
+    for a, b, hf, ht in zip(case3_fbus, case3_tbus, case3_hasf, case3_hast):
+        src_names += ([f"E_{a}_{b}_f"] if hf else []) + ([f"E_{a}_{b}_t"] if ht else [])
     # [Q12] expanded network
     sink = nb + 1
     return ReactivePrep(
@@ -181,15 +198,18 @@ def prepare_reactive(case, tol=1e-6):
         Qf=np.r_[QF, Qd], Qt=np.r_[QT, Qd], Qsf=np.r_[Qsf, np.zeros(nd)], Qst=np.r_[Qst, np.zeros(nd)],
         src=(src_bus - 1).astype(np.int64), Qsrc=Qsrc, src_names=src_names, d_labels=d_labels,
         case3_fbus=case3_fbus, case3_tbus=case3_tbus, case3_QF=case3_QF, case3_QT=case3_QT,
+        case3_hasf=case3_hasf, case3_hast=case3_hast,
         removed={"branches": int(i_zero.sum()), "generators": int(i_zero_gen.sum())},
         flipped_branches=int(flip.sum()),
         converted={"negative_generation_to_demand": int(i_qg_neg.sum()),
                    "negative_demand_to_source": int(i_qd_neg.sum()),
                    "inductive_bus_shunt_to_demand": int(i_qs_neg.sum()),
-                   "case2_branches_to_demands": int(len(c2_bus) // 2),
-                   "case3_branches_to_sources": int(c3.sum()),
+                   "case2_branches_to_demands": n_case2_both,
+                   "case3_branches_to_sources": int(c3.sum()) - n_case3_zt,
                    "inductive_from_end_shunt_to_demand": int(len(extra_bus_qsf)),
-                   "inductive_to_end_shunt_to_demand": int(len(extra_bus_qst))},
+                   "inductive_to_end_shunt_to_demand": int(len(extra_bus_qst)),
+                   "zero_terminal_demands": n_case2_zt,
+                   "zero_terminal_sources": n_case3_zt},
     )
 
 
@@ -275,16 +295,22 @@ def build_reactive_table(prep, system, X, X_self):
     lf, lt = disambiguate_parallel(lf, lt)
     data = np.vstack([full_f[nl:], full_f[:nl], full_t[:nl]])
     rows = unique_labels(prep.d_labels) + lf + lt          # [Q23]
-    # [Q24] Case-3 rows: all from-end rows, then all to-end rows
+    # [Q24] Case-3 rows: all from-end rows, then all to-end rows (a member with a zero terminal has only the row
+    # of its non-zero terminal); each in the member's own column
     n3 = prep.n_case3
     if n3:
-        c3f = np.zeros((n3, ns + nl)); c3t = np.zeros((n3, ns + nl))
-        for i in range(n3):
-            c3f[i, prep.n_pre + 2 * i] = -prep.case3_QF[i]
-            c3t[i, prep.n_pre + 2 * i + 1] = prep.case3_QT[i]
+        hf, ht = np.asarray(prep.case3_hasf, bool), np.asarray(prep.case3_hast, bool)
+        col_end = prep.n_pre + np.cumsum(hf.astype(int) + ht.astype(int))   # one past the member's last column
+        colf, colt = col_end - 1 - ht.astype(int), col_end - 1
+        i_f, i_t = np.where(hf)[0], np.where(ht)[0]
+        c3f = np.zeros((len(i_f), ns + nl)); c3t = np.zeros((len(i_t), ns + nl))
+        for r, i in enumerate(i_f):
+            c3f[r, colf[i]] = -prep.case3_QF[i]
+        for r, i in enumerate(i_t):
+            c3t[r, colt[i]] = prep.case3_QT[i]
         data = np.vstack([data, c3f, c3t])
-        rows += [f"L_{{f.{a}-{b}}}" for a, b in zip(prep.case3_fbus, prep.case3_tbus)]
-        rows += [f"L_{{t.{a}-{b}}}" for a, b in zip(prep.case3_fbus, prep.case3_tbus)]
+        rows += [f"L_{{f.{prep.case3_fbus[i]}-{prep.case3_tbus[i]}}}" for i in i_f]
+        rows += [f"L_{{t.{prep.case3_fbus[i]}-{prep.case3_tbus[i]}}}" for i in i_t]
     # [Q25] final unique-label pass
     return pd.DataFrame(data, index=pd.Index(unique_labels(rows), name="Line"), columns=unique_labels(names))
 

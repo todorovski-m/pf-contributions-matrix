@@ -9,7 +9,7 @@ import pytest
 import scipy.sparse as sp
 
 from conftest import MATRIX_DIR
-from pfc_matrix import Case, apfc, assemble_active, build_active_table, prepare_active, solve_active, write_csv
+from pfc_matrix import Case, PfcError, apfc, assemble_active, build_active_table, prepare_active, solve_active, write_csv
 from pfc_matrix.labels import unique_labels
 from pfc_matrix.options import PfcWarning
 
@@ -46,7 +46,7 @@ def test_negative_pd_is_source_column():
     assert "D_3" not in table.index
     np.testing.assert_allclose(table.loc["D_2"].to_numpy(), [100, 20], rtol=0, atol=1e-12)
     np.testing.assert_allclose(table.loc["L_{f.3-2}"].to_numpy(), [30, 20], rtol=0, atol=1e-12)
-    assert info["converted"] == {"negative_demand_to_source": 1, "negative_generation_to_demand": 0}
+    assert info["converted"] == {"negative_demand_to_source": 1, "negative_generation_to_demand": 0, "zero_terminal_demands": 0, "zero_terminal_sources": 0}
 
 
 def test_negative_pg_is_demand_row():
@@ -55,7 +55,7 @@ def test_negative_pg_is_demand_row():
     assert list(table.columns) == ["G_1"]
     assert list(table.index[:3]) == ["D_2", "D_3", "G_3"]
     assert table.loc["G_3", "G_1"] == pytest.approx(10, abs=1e-12)
-    assert info["converted"] == {"negative_demand_to_source": 0, "negative_generation_to_demand": 1}
+    assert info["converted"] == {"negative_demand_to_source": 0, "negative_generation_to_demand": 1, "zero_terminal_demands": 0, "zero_terminal_sources": 0}
     assert info["n_demand"] == 3
 
 
@@ -71,11 +71,18 @@ def test_branch_with_both_flows_below_tol_is_deleted():
     table, info = apfc(make_case({1: 0, 2: 60, 3: 40}, [(1, 100)], branches))
     assert info["removed"]["branches"] == 1 and info["n_branch"] == 3
     assert list(table.index).count("L_{f.2-3}") == 1 and "L_{f.2-3}_2" not in table.index
-    # only one end below tol: kept
+    # only one end below tol: not deleted; since T15b this is the pattern (0,+) of the terminal classification
+    # (zero from-end, active power delivered at the to-end), an error that names the branch
     branches = BASE_BRANCHES + [(2, 3, 5e-7, 2e-6)]
-    # the kept branch has the attenuation 2e-6 / 5e-7 = 4 > 1: apfc.m warns, and so does the port (T13c)
+    with pytest.raises(PfcError) as e:
+        apfc(make_case({1: 0, 2: 60, 3: 40}, [(1, 100)], branches))
+    assert e.value.identifier == "pfc:apfc:negativeLoss" and "4 (2-3)" in str(e.value)
+    # and the pattern (+,0): not deleted, one terminal demand (row C2_2)
+    _, info = apfc(make_case({1: 0, 2: 60, 3: 40}, [(1, 100)], BASE_BRANCHES + [(2, 3, 2e-6, 5e-7)]))
+    assert info["removed"]["branches"] == 0 and info["converted"]["zero_terminal_demands"] == 1
+    # both ends above tol with the attenuation 8e-6 / 2e-6 = 4 > 1: a carrier; apfc.m warns, and so does the port
     with pytest.warns(PfcWarning, match="exceeds 1"):
-        _, info = apfc(make_case({1: 0, 2: 60, 3: 40}, [(1, 100)], branches))
+        _, info = apfc(make_case({1: 0, 2: 60, 3: 40}, [(1, 100)], BASE_BRANCHES + [(2, 3, 2e-6, 8e-6)]))
     assert info["removed"]["branches"] == 0 and info["n_branch"] == 4
 
 

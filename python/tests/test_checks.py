@@ -217,15 +217,17 @@ def test_rpfc_negative_self_term_guard():
 
 
 def test_checks_false_switches_off_only_the_optional_checks():
-    # attenuation above 1 (2e-6 / 5e-7 = 4): warning with checks=True, nothing with checks=False; condest_A None
-    case = make_active({1: 0, 2: 60, 3: 40}, [(1, 100)], BASE_BRANCHES + [(2, 3, 5e-7, 2e-6)])
+    # attenuation above 1 (8e-6 / 2e-6 = 4; both ends above tol, T15b): warning with checks=True, nothing with
+    # checks=False; condest_A None
+    case = make_active({1: 0, 2: 60, 3: 40}, [(1, 100)], BASE_BRANCHES + [(2, 3, 2e-6, 8e-6)])
     with pytest.warns(PfcWarning):
         _, on = apfc(case)
     _, off = no_warning(apfc, case, Options(checks=False))
     assert on["warnings"] == ["pfc:apfc:attenuationAboveOne"] and off["warnings"] == []
     assert isinstance(on["condest_A"], float) and off["condest_A"] is None
-    # attenuation <= 0 (PT = 0 at a branch with PF > 0): error with checks=True, none with checks=False
-    case0 = make_active({1: 0, 2: 60, 3: 40}, [(1, 100)], [(1, 2, 70, 70), (2, 3, 10, 0.0), (1, 3, 30, 30)])
+    # attenuation <= 0 (PT < 0 at a branch with PF > 0, pattern (+,-)): error with checks=True, none with
+    # checks=False. (PT = 0 exactly is the pattern (+,0) since T15b: a terminal demand, not a carrier.)
+    case0 = make_active({1: 0, 2: 60, 3: 40}, [(1, 100)], [(1, 2, 70, 70), (2, 3, 10, -1e-3), (1, 3, 30, 30)])
     raises("pfc:apfc:nonPositiveAttenuation", apfc, case0)
     no_warning(apfc, case0, Options(checks=False))
     # the cyclic warning is optional, the spectral-radius error is not
