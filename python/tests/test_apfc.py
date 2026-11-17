@@ -46,7 +46,7 @@ def test_negative_pd_is_source_column():
     assert "D_3" not in table.index
     np.testing.assert_allclose(table.loc["D_2"].to_numpy(), [100, 20], rtol=0, atol=1e-12)
     np.testing.assert_allclose(table.loc["L_{f.3-2}"].to_numpy(), [30, 20], rtol=0, atol=1e-12)
-    assert info["converted"] == {"negative_demand_to_source": 1, "negative_generation_to_demand": 0, "zero_terminal_demands": 0, "zero_terminal_sources": 0}
+    assert info["converted"] == {"negative_demand_to_source": 1, "negative_generation_to_demand": 0, "zero_terminal_demands": 0, "zero_terminal_sources": 0, "case2_branches_to_demands": 0}
 
 
 def test_negative_pg_is_demand_row():
@@ -55,7 +55,7 @@ def test_negative_pg_is_demand_row():
     assert list(table.columns) == ["G_1"]
     assert list(table.index[:3]) == ["D_2", "D_3", "G_3"]
     assert table.loc["G_3", "G_1"] == pytest.approx(10, abs=1e-12)
-    assert info["converted"] == {"negative_demand_to_source": 0, "negative_generation_to_demand": 1, "zero_terminal_demands": 0, "zero_terminal_sources": 0}
+    assert info["converted"] == {"negative_demand_to_source": 0, "negative_generation_to_demand": 1, "zero_terminal_demands": 0, "zero_terminal_sources": 0, "case2_branches_to_demands": 0}
     assert info["n_demand"] == 3
 
 

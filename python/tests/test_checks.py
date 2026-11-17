@@ -227,9 +227,10 @@ def test_checks_false_switches_off_only_the_optional_checks():
     _, off = no_warning(apfc, case, Options(checks=False))
     assert on["warnings"] == ["pfc:apfc:attenuationAboveOne"] and off["warnings"] == []
     assert isinstance(on["condest_A"], float) and off["condest_A"] is None
-    # attenuation <= 0 (PT < 0 at a branch with PF > 0, pattern (+,-)): error with checks=True, none with
-    # checks=False. (PT = 0 exactly is the pattern (+,0) since T15b: a terminal demand, not a carrier.)
-    case0 = make_active({1: 0, 2: 60, 3: 40}, [(1, 100)], [(1, 2, 70, 70), (2, 3, 10, -1e-3), (1, 3, 30, 30)])
+    # attenuation <= 0: error with checks=True, none with checks=False. Since T14c only a branch with terminal flows
+    # of magnitude exactly tol (pattern (0,0), not deleted) reaches it: PF = tol, PT = -tol. (PT = 0 is the pattern
+    # (+,0), a terminal demand since T15b; PT < 0 with PF > 0 is (+,-), two terminal demands since T14c.)
+    case0 = make_active({1: 0, 2: 60, 3: 40}, [(1, 100)], [(1, 2, 70, 70), (2, 3, 1e-6, -1e-6), (1, 3, 30, 30)])
     raises("pfc:apfc:nonPositiveAttenuation", apfc, case0)
     no_warning(apfc, case0, Options(checks=False))
     # the cyclic warning is optional, the spectral-radius error is not

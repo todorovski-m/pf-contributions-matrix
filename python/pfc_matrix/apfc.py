@@ -50,6 +50,7 @@ class ActivePrep:
     nd_pg: int = 0          # number of demands from generators with negative output (the rest are terminal demands C2_b)
     negative_loss_to: list = field(default_factory=list)    # labels of the (0,+) branches (error in phase (b))
     negative_loss_from: list = field(default_factory=list)  # labels of the (-,0) branches (error in phase (b))
+    negative_loss_both: list = field(default_factory=list)  # labels of the (-,+) branches (error in phase (b), T14c)
 
     @property
     def ne(self):
@@ -87,16 +88,20 @@ def prepare_active(case, tol=1e-6):
     del_gen = np.abs(pg_all) < tol
     gbus, pg = gen["GEN_BUS"].to_numpy(int)[~del_gen], pg_all[~del_gen]
     # [R4] the to-end flows of the input are already the delivered flows (sign reversed by my_runpf.m)
-    # Terminal classification (T15b), before the flip, sign by tol: (+,0) one terminal demand PF at the from bus,
-    # (0,-) one terminal demand -PT at the to bus (rows C2_b); both leave the branch set. (0,+) and (-,0) are the
-    # error pfc:apfc:negativeLoss, raised at the start of phase (b); labels 'k (f-t)' with k the 1-based index after
-    # the deletion and f-t as in the input. Every other branch keeps the path below.
+    # Terminal classification (T15b, T14c), before the flip, sign by tol: (+,0) one terminal demand PF at the from
+    # bus, (0,-) one terminal demand -PT at the to bus, (+,-) both (Case 2: rows C2_b, from-terminals first, then
+    # to-terminals, each in branch order); these leave the branch set. (0,+), (-,0) and (-,+) are the error
+    # pfc:apfc:negativeLoss, raised at the start of phase (b); labels 'k (f-t)' with k the 1-based index after the
+    # deletion and f-t as in the input. Every other branch keeps the path below.
     s_f, s_t = terminal_sign(pf, tol), terminal_sign(pt, tol)
     lab_in = [f"{k + 1} ({a}-{b})" for k, (a, b) in enumerate(zip(fb, tb))]
     neg_to = [lab_in[k] for k in np.where((s_f == 0) & (s_t > 0))[0]]
     neg_from = [lab_in[k] for k in np.where((s_f < 0) & (s_t == 0))[0]]
-    zt_from = (s_f > 0) & (s_t == 0)
-    zt_to = (s_f == 0) & (s_t < 0)
+    neg_both = [lab_in[k] for k in np.where((s_f < 0) & (s_t > 0))[0]]
+    c2 = (s_f > 0) & (s_t < 0)
+    n_zt, n_c2 = int((((s_f > 0) & (s_t == 0)) | ((s_f == 0) & (s_t < 0))).sum()), int(c2.sum())
+    zt_from = ((s_f > 0) & (s_t == 0)) | c2
+    zt_to = ((s_f == 0) & (s_t < 0)) | c2
     zt_bus = np.r_[fb[zt_from], tb[zt_to]]
     zt_P = np.r_[pf[zt_from], -pt[zt_to]]
     keep = ~(zt_from | zt_to)
@@ -129,9 +134,10 @@ def prepare_active(case, tol=1e-6):
         flipped_branches=int(flip.sum()),
         converted={"negative_demand_to_source": int(i_pdneg.sum()),
                    "negative_generation_to_demand": int(i_pgneg.sum()),
-                   "zero_terminal_demands": int(len(zt_bus)),
-                   "zero_terminal_sources": 0},
-        nd_pg=int(i_pgneg.sum()), negative_loss_to=neg_to, negative_loss_from=neg_from,
+                   "zero_terminal_demands": n_zt,
+                   "zero_terminal_sources": 0,
+                   "case2_branches_to_demands": n_c2},
+        nd_pg=int(i_pgneg.sum()), negative_loss_to=neg_to, negative_loss_from=neg_from, negative_loss_both=neg_both,
     )
 
 
@@ -140,7 +146,7 @@ def assemble_active(prep, tol_div=1e-9, run_checks=True):
     checks of apfc.m in its order [R20]: negative loss (always; raised by apfc.m at the classification, before all
     other checks), inflow guard (always), attenuation range (if run_checks), cycle and spectral radius (the error
     always, the warning pfc:apfc:cyclic if run_checks)."""
-    checks.check_negative_loss(prep.negative_loss_to, prep.negative_loss_from)
+    checks.check_negative_loss(prep.negative_loss_to, prep.negative_loss_from, prep.negative_loss_both)
     ne, nb, ng = prep.ne, prep.nb, prep.ng
     rows = np.arange(ne)
     # [R9] Cf, Ct: branch -> bus incidence (ne x nb+1, the last column is the sink); Cg: source -> bus

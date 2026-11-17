@@ -95,8 +95,9 @@ def test_apfc_patterns():
     with pytest.warns(Warning):
         t, d = apfc(crafted(-0.9, -1, *q))                              # (-,-): flipped; cycle 4-5-4 (warning)
     assert "L_{f.5-4}" in t.index and d["flipped_branches"] == d0["flipped_branches"] + 1
-    raises("pfc:apfc:nonPositiveAttenuation", apfc, crafted(1, -0.1, *q))     # (+,-)
-    raises("pfc:apfc:nonPositiveAttenuation", apfc, crafted(-0.1, 1, *q))     # (-,+)
+    t, d = apfc(crafted(1, -0.1, *q))                                   # (+,-): two terminal demands (T14c)
+    assert {"C2_4", "C2_5"} <= set(t.index) and d["converted"]["case2_branches_to_demands"] == 1
+    raises("pfc:apfc:negativeLoss", apfc, crafted(-0.1, 1, *q))         # (-,+): negative loss (T14c)
     t, d = apfc(crafted(1, 0, *q))                                      # (+,0)
     assert "C2_4" in t.index and "L_{f.4-5}_2" not in t.index and abs(row_sum(t, "C2_4") - 1) < TOL
     assert d["n_branch"] == d0["n_branch"] and d["converted"]["zero_terminal_demands"] == 1

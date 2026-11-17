@@ -147,10 +147,11 @@ def check_inflow(total, f, tol_div, kind):
                        % (tol_div, ", ".join(str(k + 1) for k in bad)))
 
 
-def check_negative_loss(labels_to, labels_from):
-    """check_negative_loss(labels_to, labels_from) of pfc_checks.m: error pfc:apfc:negativeLoss for active power
-    delivered at one end of a branch whose other end carries zero flow: labels_to names the (0,+) branches,
-    labels_from the (-,0) branches; when both occur, the two sentences are joined by one space."""
+def check_negative_loss(labels_to, labels_from, labels_both=()):
+    """check_negative_loss(labels_to, labels_from, labels_both) of pfc_checks.m: error pfc:apfc:negativeLoss for
+    active power delivered at one end of a branch whose other end carries zero flow, or at both ends: labels_to names
+    the (0,+) branches, labels_from the (-,0) branches, labels_both the (-,+) branches (T14c); one sentence per
+    non-empty list, in this order, joined by one space."""
     msg = []
     if labels_to:
         msg.append("Active power is delivered at the to-end of a branch with zero from-end flow (negative loss) "
@@ -158,6 +159,9 @@ def check_negative_loss(labels_to, labels_from):
     if labels_from:
         msg.append("Active power is delivered at the from-end of a branch with zero to-end flow (negative loss) "
                    "for branch(es): %s." % ", ".join(labels_from))
+    if labels_both:
+        msg.append("Active power is delivered at both ends of a branch (negative loss) for branch(es): %s."
+                   % ", ".join(labels_both))
     if msg:
         raise PfcError("pfc:apfc:negativeLoss", " ".join(msg))
 
