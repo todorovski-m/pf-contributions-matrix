@@ -50,12 +50,15 @@ function varargout = pfc_checks(action, varargin)
 %     above TOL_DIV are propagated downstream, so a negative one would leave
 %     the downstream row sums unequal to the flows. For a valid carrier the
 %     error cannot occur (see the comment at the self-terms in rpfc.m).
-%   PFC_CHECKS('negative_loss', LABELS_TO, LABELS_FROM)
+%   PFC_CHECKS('negative_loss', LABELS_TO, LABELS_FROM, LABELS_BOTH)
 %     Error pfc:apfc:negativeLoss for active power delivered at one end of
-%     a branch whose other end carries zero flow (sign by tol): LABELS_TO
-%     names the branches with pattern (0,+) (delivered at the to-end, zero
-%     from-end flow), LABELS_FROM those with pattern (-,0) (delivered at the
-%     from-end, zero to-end flow). No error if both are empty.
+%     a branch whose other end carries zero flow, or at both ends (sign by
+%     tol): LABELS_TO names the branches with pattern (0,+) (delivered at the
+%     to-end, zero from-end flow), LABELS_FROM those with pattern (-,0)
+%     (delivered at the from-end, zero to-end flow), LABELS_BOTH (optional)
+%     those with pattern (-,+) (delivered at both ends). One sentence per
+%     non-empty list, in this order, joined by one space. No error if all
+%     are empty.
 %
 %   W is a cell array of the warning identifiers that were issued.
 
@@ -242,7 +245,10 @@ if ~isempty(bad)
 end
 end
 
-function check_negative_loss(labels_to, labels_from)
+function check_negative_loss(labels_to, labels_from, labels_both)
+if nargin < 3
+    labels_both = {};
+end
 msg = {};
 if ~isempty(labels_to)
     msg{end + 1} = sprintf(['Active power is delivered at the to-end of a branch with zero from-end flow ' ...
@@ -251,6 +257,10 @@ end
 if ~isempty(labels_from)
     msg{end + 1} = sprintf(['Active power is delivered at the from-end of a branch with zero to-end flow ' ...
         '(negative loss) for branch(es): %s.'], strjoin(labels_from(:).', ', '));
+end
+if ~isempty(labels_both)
+    msg{end + 1} = sprintf('Active power is delivered at both ends of a branch (negative loss) for branch(es): %s.', ...
+        strjoin(labels_both(:).', ', '));
 end
 if ~isempty(msg)
     error('pfc:apfc:negativeLoss', '%s', strjoin(msg, ' '));

@@ -26,13 +26,18 @@ function [APFC_tbl, mpc, info] = apfc(casedata, opts)
 %
 %   Terminal classification (sign s(x) = + if x > tol, - if x < -tol, 0
 %   otherwise, on PF and the delivered PT, before the orientation flip):
-%     (+,+) carrier; (-,-) flipped, then carrier; (+,-) and (-,+) error
-%       pfc:apfc:nonPositiveAttenuation (fed from both ends, as before);
+%     (+,+) carrier; (-,-) flipped, then carrier;
 %     (+,0) one terminal demand PF at the from bus, (0,-) one terminal
 %       demand -PT at the to bus (row C2_b; a dead-end branch that carries
 %       only its own loss); such a branch is not a carrier;
-%     (0,+) and (-,0) error pfc:apfc:negativeLoss (active power delivered at
-%       one end with zero flow at the other).
+%     (+,-) two terminal demands PF at the from bus and -PT at the to bus
+%       (rows C2_b; both buses supply the branch, which only absorbs its own
+%       loss; Case 2 as in RPFC); not a carrier;
+%     (0,+), (-,0) and (-,+) error pfc:apfc:negativeLoss (active power
+%       delivered at one end with zero flow at the other, or at both ends).
+%   The attenuation check (pfc:apfc:nonPositiveAttenuation) stays as a
+%   defensive check: a carrier then has a > 0, except a branch with a
+%   terminal of magnitude exactly tol (pattern (0,0), not deleted).
 %
 %   Source columns: G_b (generators with PG > 0), then D_b (buses with
 %   negative active demand). Rows: D_b (demands), G_b (generators with
@@ -76,19 +81,25 @@ mpc.branch(:, [PT QT]) = -mpc.branch(:, [PT QT]);
 %% Branches with exactly one zero terminal (sign by tol, before the flip)
 %  s(x) = +1 if x > tol, -1 if x < -tol, 0 otherwise, on PF and the delivered PT.
 %  (+,0): one terminal demand PF at the from bus; (0,-): one terminal demand
-%  -PT at the to bus (rows C2_b). Both are removed from the branch set (a
-%  dead-end branch that carries only its own loss is not a carrier).
-%  (0,+) and (-,0): active power delivered at one end with zero flow at the
-%  other (negative loss): error pfc:apfc:negativeLoss. All other branches
-%  keep the treatment below (flip if PF < 0, carriers).
+%  -PT at the to bus; (+,-): both buses supply the branch, which only absorbs
+%  its own loss (Case 2): two terminal demands, PF at the from bus and -PT at
+%  the to bus (rows C2_b; first the from-terminals, then the to-terminals,
+%  each in branch order). These branches are removed from the branch set (a
+%  branch that carries only its own loss is not a carrier).
+%  (0,+), (-,0) and (-,+): active power delivered at one end with zero flow at
+%  the other, or at both ends (negative loss): error pfc:apfc:negativeLoss.
+%  All other branches keep the treatment below (flip if PF < 0, carriers).
 sgn = @(x) (x > tol) - (x < -tol);
 s_f = sgn(mpc.branch(:, PF));
 s_t = sgn(mpc.branch(:, PT));
 lab_in = arrayfun(@(k) sprintf('%d (%d-%d)', k, mpc.branch(k, F_BUS), mpc.branch(k, T_BUS)), ...
     (1:size(mpc.branch, 1))', 'UniformOutput', false);
-pfc_checks('negative_loss', lab_in(s_f == 0 & s_t > 0), lab_in(s_f < 0 & s_t == 0));
-i_zt_from = s_f > 0 & s_t == 0;
-i_zt_to   = s_f == 0 & s_t < 0;
+pfc_checks('negative_loss', lab_in(s_f == 0 & s_t > 0), lab_in(s_f < 0 & s_t == 0), lab_in(s_f < 0 & s_t > 0));
+i_case2   = s_f > 0 & s_t < 0;                 % (+,-): both terminals are demands
+i_zt_from = (s_f > 0 & s_t == 0) | i_case2;    % from-terminal demands
+i_zt_to   = (s_f == 0 & s_t < 0) | i_case2;    % to-terminal demands
+n_zt      = nnz((s_f > 0 & s_t == 0) | (s_f == 0 & s_t < 0));
+n_case2   = nnz(i_case2);
 zt_bus = [mpc.branch(i_zt_from, F_BUS); mpc.branch(i_zt_to, T_BUS)];
 zt_P   = [mpc.branch(i_zt_from, PF);   -mpc.branch(i_zt_to, PT)   ];
 mpc.branch = mpc.branch(~(i_zt_from | i_zt_to), :);
@@ -262,8 +273,9 @@ info.removed = struct('branches', nnz(i_del_br), 'generators', nnz(i_del_gen));
 info.flipped_branches = nnz(i_flip);
 info.converted = struct('negative_demand_to_source', numel(src_bus_pd), ...
                         'negative_generation_to_demand', numel(d_bus_pg), ...
-                        'zero_terminal_demands', numel(zt_bus), ...
-                        'zero_terminal_sources', 0);
+                        'zero_terminal_demands', n_zt, ...
+                        'zero_terminal_sources', 0, ...
+                        'case2_branches_to_demands', n_case2);
 info.acyclic = acyclic;
 info.spectral_radius = rho;
 info.warnings = [w_att, w_cyc];

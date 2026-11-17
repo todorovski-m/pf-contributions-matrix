@@ -25,7 +25,7 @@ result() {   # result <name> <exit status> [detail]
 print "work folder: $WORK"
 
 # 1. unit tests
-for t in test_options test_checks test_diag test_terminal; do
+for t in test_options test_checks test_diag test_terminal test_both_ends; do
   zsh tests/octave_in_scratch.sh $t > $WORK/$t.log 2>&1
   rc=$?
   grep -E '^(PASS|FAIL) ' $WORK/$t.log | while read -r line; do
@@ -46,6 +46,9 @@ result "apfc and rpfc on all cases under Octave" $? "see $WORK/run_matrix.log"
 # The dead-end cases syn9_dead_* are not compared: compare_old.py compares both kinds of a case, and the old method
 # is not a reference for reactive dead ends (it does not finish or gives row errors, report T15a). Their active
 # part is compared with the old method by tests/dead_end_equivalence.py.
+# syn9_both_ends is not compared either: for its APFC branch 2-8 fed from both ends (pattern (+,-)) the old method
+# is not a reference (each of the branch's two rows is twice its flow, so its row errors equal the flow; every other
+# row agrees within 1e-10; report T14c).
 OLD_CASES=case1,case9,case14,case24_ieee_rts,case30,case33,case118,tap_loop,syn9_neg_pd,syn9_neg_pg,syn9_neg_qd,syn9_neg_qg,syn9_case3_tap
 python3 -B tests/compare_old.py $WORK/new benchmark/inputs $WORK/syn_inputs --cases $OLD_CASES > $WORK/compare_old.md 2>&1
 result "against the old method (cells and row sums within 1e-10)" $? "$(tail -1 $WORK/compare_old.md)"
@@ -59,8 +62,9 @@ mkdir -p $WORK/t12a && git archive $T12A_REF | tar -x -C $WORK/t12a
 mkdir -p $WORK/t12a/tests/cases_synthetic && cp tests/cases_synthetic/*.m $WORK/t12a/tests/cases_synthetic/
 CASES=()
 for c in $(cd $WORK/new && ls *_apfc.csv | sed 's/_apfc.csv$//'); do
-  # the dead-end cases syn9_dead_* need the terminal classification of T15b, which the T12a code does not have
-  [[ $c == syn9_dead_* ]] && continue
+  # the dead-end cases syn9_dead_* and syn9_both_ends need the terminal classification of T15b and T14c, which the
+  # T12a code does not have
+  [[ $c == syn9_dead_* || $c == syn9_both_ends ]] && continue
   [[ -f $WORK/t12a/cases/$c.m || -f $WORK/t12a/tests/cases_synthetic/$c.m ]] && CASES+=($c)   # cases that existed at T12A_REF
 done
 ( cd $WORK/t12a && zsh tests/run_matrix.sh $WORK/t12a_out $CASES ) > $WORK/t12a_run.log 2>&1

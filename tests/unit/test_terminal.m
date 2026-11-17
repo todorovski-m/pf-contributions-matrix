@@ -22,10 +22,11 @@ pfc_report('apfc pattern (+,+): carrier, no terminal demand', has(t, 'L_{f.4-5}_
 [t, ~, d] = apfc(pfc_crafted_branch(-0.9, -1, q(1), q(2)), sopt('mm'));
 pfc_report('apfc pattern (-,-): flipped, then carrier', has(t, 'L_{f.5-4}') && d.flipped_branches == dpb.flipped_branches + 1 ...
     && d.converted.zero_terminal_demands == 0);
-[ok, msg] = pfc_expect_error(@() apfc(pfc_crafted_branch(1, -0.1, q(1), q(2)), sopt('pm')), 'pfc:apfc:nonPositiveAttenuation');
-pfc_report('apfc pattern (+,-): error pfc:apfc:nonPositiveAttenuation as before', ok, msg);
-[ok, msg] = pfc_expect_error(@() apfc(pfc_crafted_branch(-0.1, 1, q(1), q(2)), sopt('mp')), 'pfc:apfc:nonPositiveAttenuation');
-pfc_report('apfc pattern (-,+): error pfc:apfc:nonPositiveAttenuation as before', ok, msg);
+% (+,-) and (-,+): since T14c two terminal demands and the error pfc:apfc:negativeLoss (tests/unit/test_both_ends.m)
+[t, ~, d] = apfc(pfc_crafted_branch(1, -0.1, q(1), q(2)), sopt('pm'));
+pfc_report('apfc pattern (+,-): two terminal demands (T14c)', has(t, 'C2_4') && has(t, 'C2_5') && d.converted.case2_branches_to_demands == 1);
+[ok, msg] = pfc_expect_error(@() apfc(pfc_crafted_branch(-0.1, 1, q(1), q(2)), sopt('mp')), 'pfc:apfc:negativeLoss');
+pfc_report('apfc pattern (-,+): error pfc:apfc:negativeLoss (T14c)', ok, msg);
 [t, ~, d] = apfc(pfc_crafted_branch(1, 0, q(1), q(2)), sopt('p0'));
 [r, ~, x] = pfc_tbl(t);
 pfc_report('apfc pattern (+,0): one terminal demand PF at the from bus (row C2_4), not a carrier', ...
