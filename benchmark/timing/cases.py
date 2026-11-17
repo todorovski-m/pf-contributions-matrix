@@ -18,7 +18,29 @@ sys.path.insert(0, os.path.join(MATRIX, "python"))
 
 SMALL = ["case1", "case9", "case14", "case24_ieee_rts", "case30", "case33", "case118", "tap_loop",
          "syn9_neg_pd", "syn9_neg_pg", "syn9_neg_qd", "syn9_neg_qg", "syn9_case3_tap", "syn9_carrier_tap"]
-LARGE = ["case300", "case1354pegase", "case2869pegase", "case9241pegase", "case_ACTIVSg2000", "case_ACTIVSg10k"]
+# The large (case, kinds) combinations that the scan of brief T14c (B1) marks usable, in order of size. Left out:
+#   case3120sp apfc (pfc:apfc:negativeLoss: six branches with negative series resistance in the data);
+#   case_ACTIVSg10k rpfc and case9241pegase rpfc (estimated dense reactive tables above the memory limit);
+#   case9241pegase apfc (pfc:apfc:spectralRadius: a circulating 2-cycle of gain 1 between buses 880 and 6671).
+LARGE_COMBOS = [("case300", ("apfc", "rpfc")), ("case_ACTIVSg500", ("apfc", "rpfc")), ("case1354pegase", ("apfc", "rpfc")),
+                ("case_ACTIVSg2000", ("apfc", "rpfc")), ("case2383wp", ("apfc", "rpfc")), ("case2869pegase", ("apfc", "rpfc")),
+                ("case3120sp", ("rpfc",)), ("case_ACTIVSg10k", ("apfc",))]
+LARGE = [c for c, _ in LARGE_COMBOS]
+COMBOS = [(c, ("apfc", "rpfc")) for c in SMALL] + LARGE_COMBOS
+
+
+def parse_combos(text):
+    """'case9:apfc,case9:rpfc,case3120sp:rpfc' -> [(case, kinds)] in the order of first appearance."""
+    out = {}
+    for item in text.split(","):
+        c, k = item.split(":")
+        assert k in ("apfc", "rpfc"), item
+        out.setdefault(c, []).append(k)
+    return [(c, tuple(k)) for c, k in out.items()]
+
+
+def combos_text(combos):
+    return ",".join(f"{c}:{k}" for c, ks in combos for k in ks)
 
 
 def input_dirs(syn_inputs=None, large_inputs=None):

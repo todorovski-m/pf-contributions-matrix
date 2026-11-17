@@ -5,8 +5,10 @@
 #
 # Usage (from the root of the matrix repository):
 #     zsh benchmark/timing/run_timing.sh [--smoke] [any option of timing.py run, for example --cases case9,case118]
-# Defaults: the 14 small cases and every large case found in benchmark/inputs_large/ (made by export_large.sh);
-# budget 30 s per cell, 5 to 200 repetitions, 2 warm-up runs, time-out 600 s per single run of the old method.
+# Defaults: the (case, kind) combinations of cases.py (COMBOS: the 14 small cases with both kinds, and the large
+# combinations that are usable, if benchmark/inputs_large/<case>.mat exists; made by export_large.sh); budget 30 s
+# per cell, 5 to 200 repetitions, 2 warm-up runs; the slow-cell rule (a single run above 30 s: 3 repetitions, flagged
+# slow); time-out 1800 s per single run (the old method of the large cases).
 # The synthetic cases are exported first with tests/export_synthetic.sh into a scratch folder (Octave is needed for
 # that export only; it is outside every timed region). $PYTHON selects the interpreter (default: python).
 
@@ -21,15 +23,12 @@ mkdir -p $OUT
 SYN=$(mktemp -d /tmp/run_timing_syn.XXXXXX)
 zsh tests/export_synthetic.sh $SYN > $OUT/export_synthetic.log 2>&1 || { print -u2 "synthetic export failed, see $OUT/export_synthetic.log"; exit 1 }
 
-CASES=(case1 case9 case14 case24_ieee_rts case30 case33 case118 tap_loop syn9_neg_pd syn9_neg_pg syn9_neg_qd syn9_neg_qg syn9_case3_tap syn9_carrier_tap)
-for c in case300 case1354pegase case2869pegase case9241pegase case_ACTIVSg2000 case_ACTIVSg10k; do
-  [[ -f benchmark/inputs_large/$c.mat ]] && CASES+=($c)
-done
-LIST=${(j:,:)CASES}
-HAS_CASES=0
-for a in "$@"; do [[ $a == --cases ]] && HAS_CASES=1; done
+COMBOS=$($PY -B -c "import os, sys; sys.path.insert(0, 'benchmark/timing'); import cases as C; print(C.combos_text([(c, k) for c, k in C.COMBOS if c in C.SMALL or os.path.exists(os.path.join('benchmark', 'inputs_large', c + '.mat'))]))")
+HAS_CASES=0; HAS_TIMEOUT=0
+for a in "$@"; do [[ $a == --cases || $a == --combos ]] && HAS_CASES=1; [[ $a == --timeout ]] && HAS_TIMEOUT=1; done
 EXTRA=()
-(( HAS_CASES )) || EXTRA=(--cases $LIST)
+(( HAS_CASES )) || EXTRA+=(--combos $COMBOS)
+(( HAS_TIMEOUT )) || EXTRA+=(--timeout 1800)
 
 print "results: $OUT"
 print "git: $(git rev-parse HEAD)$([[ -n "$(git status --porcelain)" ]] && print ' (dirty)')"

@@ -46,7 +46,9 @@ def summarize(folder):
     env, total, phase, cells = load(folder)
     smoke = bool(env.get("smoke"))
     label = SMOKE_LABEL if smoke else "series"
-    status = {(c["case"], c["method"], c["kind"], c["checks"]): c["status"] for c in cells}
+    # a slow cell (slow-cell rule: a single run above the threshold, 3 repetitions) is flagged in its status
+    status = {(c["case"], c["method"], c["kind"], c["checks"]): c["status"] + (" (slow)" if c.get("slow") == "True" else "")
+              for c in cells}
     n_e = {(c, k): env["cases"][c].get(f"n_e_{k}") for c in env["cases"] for k in ("apfc", "rpfc")}
     rows = []
     for key in sorted(set(status) | set(total), key=lambda k: (k[0], k[2], k[1], k[3])):

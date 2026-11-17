@@ -76,12 +76,18 @@ def call_with_timeout(fn, timeout_s):
         signal.signal(signal.SIGALRM, old)
 
 
-def measure_cell(fn, budget_s=30.0, min_rep=5, max_rep=200, warmup=2, timeout_s=600.0, finished=None):
+SLOW_S, SLOW_REP = 30.0, 3     # the slow-cell rule
+
+
+def measure_cell(fn, budget_s=30.0, min_rep=5, max_rep=200, warmup=2, timeout_s=600.0, finished=None, slow_s=SLOW_S):
     """Measure one cell. fn() returns (result, phases), phases a dict of nanoseconds or None. gc.collect() before the
     cell, the garbage collector disabled during each single run, time.perf_counter_ns around fn. ``warmup`` runs are
     not recorded. Then repetitions until their total time reaches budget_s with at least min_rep, at most max_rep.
     A single run longer than timeout_s ends the cell with status 'did not finish (time-out)'; if finished(result) is
-    False, the status is 'did not finish (iteration cap)'. Returns dict(status, samples, phases, warmup)."""
+    False, the status is 'did not finish (iteration cap)'.
+    Slow-cell rule: if a single run (warm-up or recorded) takes longer than slow_s seconds, the cell is 'slow': no
+    further warm-up run, and exactly SLOW_REP = 3 repetitions are recorded (fewer only on a time-out); min_rep and
+    the budget do not apply. Returns dict(status, samples, phases, warmup, slow)."""
     gc.collect()
     samples, phases = [], []
 
@@ -95,20 +101,32 @@ def measure_cell(fn, budget_s=30.0, min_rep=5, max_rep=200, warmup=2, timeout_s=
             gc.enable()
         return t1 - t0, res, ph
 
+    slow, done_warm = False, 0
+    out = lambda st: {"status": st, "samples": samples, "phases": phases, "warmup": done_warm, "slow": slow}
     try:
         for _ in range(warmup):
-            _, res, _ = one()
+            ns, res, _ = one(); done_warm += 1
             if finished is not None and not finished(res):
-                return {"status": "did not finish (iteration cap)", "samples": [], "phases": [], "warmup": warmup}
+                return out("did not finish (iteration cap)")
+            if ns > slow_s * 1e9:
+                slow = True
+                break
         total = 0
-        while len(samples) < max_rep and (len(samples) < min_rep or total < budget_s * 1e9):
+        while True:
+            if slow:
+                if len(samples) >= SLOW_REP:
+                    break
+            elif not (len(samples) < max_rep and (len(samples) < min_rep or total < budget_s * 1e9)):
+                break
             ns, res, ph = one()
             if finished is not None and not finished(res):
-                return {"status": "did not finish (iteration cap)", "samples": samples, "phases": phases, "warmup": warmup}
+                return out("did not finish (iteration cap)")
             samples.append(ns); phases.append(ph); total += ns
+            if ns > slow_s * 1e9 and not slow:
+                slow = True
     except RunTimeout:
-        return {"status": "did not finish (time-out)", "samples": samples, "phases": phases, "warmup": warmup}
-    return {"status": "ok", "samples": samples, "phases": phases, "warmup": warmup}
+        return out("did not finish (time-out)")
+    return out("ok")
 
 
 # ---------------------------------------------------------------- the two methods
@@ -272,10 +290,14 @@ def guard(data, kind, itermax, timeout_s, branch_old):
     out["port_equal_public"] = bool(table.equals(pub))
     out["port_rowsum"] = float(np.abs(table.to_numpy().sum(axis=1) - flows).max()) if len(flows) else 0.0
     try:
+        import correctness           # the row mapping with the terminal classification (T15b, T14c)
         flows_old, t_old, done, iters = old_with_iterations(data, kind, itermax, branch_old, timeout_s)
         out["old_status"] = "ok" if done else "did not finish (iteration cap)"
         out["iterations"] = iters
-        cmpd = compare_old_in_memory(t_old, flows_old, data["branch"], table, kind, done)
+        c = correctness.compare(data, kind, t_old, flows_old, table)
+        cmpd = {"rows": len(table), "unmapped_matrix_rows": c["unmapped_port_rows"], "max_cell": c["max_cell"],
+                "old_rowsum": c["port_rowsum_vs_old_flow"], "excluded_rows": c["excluded_rows"],
+                "unmapped_old_columns": c["unmapped_old_columns"], "unmapped_matrix_columns": c["unmapped_port_columns"]}
         out.update(cmpd)
     except RunTimeout:
         out["old_status"] = "did not finish (time-out)"; out["iterations"] = None
@@ -391,13 +413,13 @@ def run_series(a):
     os.makedirs(a.out, exist_ok=True)
     env = environment_record(a.smoke, a)
     dirs = C.input_dirs(a.syn_inputs, a.large_inputs)
-    cases = a.cases.split(",") if a.cases else C.SMALL
+    combos = C.parse_combos(a.combos) if a.combos else [(c, ("apfc", "rpfc")) for c in (a.cases.split(",") if a.cases else C.SMALL)]
     ncpu = os.cpu_count()
     samples_f = open(os.path.join(a.out, "samples.csv"), "w", newline="")
     sw = csv.writer(samples_f)
     sw.writerow(["label", "case", "method", "kind", "checks", "repetition", "ns", "phase"])
     cells, guards, iters, mem, per_case = [], [], [], [], {}
-    for c in cases:
+    for c, kinds in combos:
         before = load_record()
         rec = {"load_before": before, "quiet": quiet_flag(before["load1"], ncpu)}
         try:
@@ -412,7 +434,7 @@ def run_series(a):
             cells.append({"case": c, "method": "all", "kind": "", "checks": "", "status": f"not timed ({rec['error']})"})
             continue
         limit = a.mem_fraction * physical_memory()
-        for kind in ("apfc", "rpfc"):
+        for kind in kinds:
             try:
                 est = estimate_case(data, kind)
             except Exception as e:
@@ -446,7 +468,7 @@ def run_series(a):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     r = measure_cell(fn, a.budget, a.min_rep, a.max_rep, a.warmup, a.timeout,
-                                     finished=old_finished if method == "old" else None)
+                                     finished=old_finished if method == "old" else None, slow_s=a.slow)
                 ch = "" if checks is None else ("on" if checks else "off")
                 for k, (ns, ph) in enumerate(zip(r["samples"], r["phases"]), 1):
                     sw.writerow([env["label"], c, method, kind, ch, k, ns, ""])
@@ -454,7 +476,7 @@ def run_series(a):
                         sw.writerow([env["label"], c, method, kind, ch, k, v, p_])
                 samples_f.flush()
                 cells.append({"case": c, "method": method, "kind": kind, "checks": ch, "status": r["status"],
-                              "n": len(r["samples"]), "warmup": r["warmup"]})
+                              "n": len(r["samples"]), "warmup": r["warmup"], "slow": r["slow"]})
                 if a.memory and r["status"] == "ok":
                     m = memory_cell(a, c, method, kind, bool(checks))
                     mem.append({"case": c, "method": method, "kind": kind, "checks": ch, **m, "unit": env["ru_maxrss_unit"]})
@@ -485,6 +507,8 @@ def main(argv=None):
         p.add_argument("--timeout", type=float, default=600.0)
     r = sub.choices["run"]
     r.add_argument("--out", required=True); r.add_argument("--cases")
+    r.add_argument("--combos", help="case:kind list, for example case9:apfc,case9:rpfc,case3120sp:rpfc (wins over --cases)")
+    r.add_argument("--slow", type=float, default=SLOW_S, help="slow-cell threshold in seconds for a single run")
     r.add_argument("--budget", type=float, default=30.0); r.add_argument("--min-rep", type=int, default=5)
     r.add_argument("--max-rep", type=int, default=200); r.add_argument("--warmup", type=int, default=2)
     r.add_argument("--smoke", action="store_true"); r.add_argument("--no-memory", dest="memory", action="store_false")

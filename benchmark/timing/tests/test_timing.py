@@ -106,3 +106,56 @@ def test_dense_bytes_formula():
     class P: ne, ng, nd, nl, ns, n_case3 = 10, 2, 3, 4, 5, 1
     assert T.dense_bytes(P, "apfc") == 8 * (10 * 2 + (3 + 8) * 2)
     assert T.dense_bytes(P, "rpfc") == 8 * (2 * 10 * 9 + (3 + 8 + 2) * 9)
+
+
+def test_slow_cell_rule():
+    # a single run above the threshold: no further warm-up, exactly 3 recorded repetitions, flagged slow; min_rep and
+    # the budget do not apply. Below the threshold the usual rules apply and the cell is not slow.
+    calls = []
+
+    def slow():
+        calls.append(1); time.sleep(0.03)
+        return None, None
+    r = T.measure_cell(slow, budget_s=1e6, min_rep=5, max_rep=200, warmup=2, timeout_s=5, slow_s=0.01)
+    assert r["slow"] and r["status"] == "ok" and len(r["samples"]) == 3 and r["warmup"] == 1 and len(calls) == 4
+    fast = lambda: (None, None)
+    r = T.measure_cell(fast, budget_s=0, min_rep=5, max_rep=200, warmup=2, timeout_s=1, slow_s=0.01)
+    assert not r["slow"] and len(r["samples"]) == 5
+    # a cell that becomes slow only in a recorded run also stops at 3
+    n = []
+
+    def grow():
+        n.append(1); time.sleep(0.03 if len(n) > 1 else 0)
+        return None, None
+    r = T.measure_cell(grow, budget_s=1e6, min_rep=5, max_rep=200, warmup=0, timeout_s=5, slow_s=0.01)
+    assert r["slow"] and len(r["samples"]) == 3
+
+
+def test_combination_list():
+    assert C.parse_combos("case9:apfc,case9:rpfc,case3120sp:rpfc") == [("case9", ("apfc", "rpfc")), ("case3120sp", ("rpfc",))]
+    assert all(c in C.SMALL for c, k in C.COMBOS[:len(C.SMALL)]) and all(k == ("apfc", "rpfc") for _, k in C.COMBOS[:len(C.SMALL)])
+    assert ("case3120sp", ("rpfc",)) in C.COMBOS and ("case_ACTIVSg10k", ("apfc",)) in C.COMBOS
+    assert "case9241pegase" not in C.LARGE
+    assert C.parse_combos(C.combos_text(C.COMBOS)) == [(c, tuple(k)) for c, k in C.COMBOS]
+
+
+@pytest.mark.skipif(not __import__("shutil").which("octave"), reason="octave not available")
+def test_renumbering_of_the_export(tmp_path):
+    # prepare_case.m on a copy of case9 with every bus number shifted by +100: the busmap is a bijection onto 1..nb
+    # (old numbers 101..109), and the prepared case has the same power flow after mapping back (neutrality_check.m)
+    import subprocess, csv
+    script = ("define_constants; m = loadcase('case9'); m.bus(:, BUS_I) = m.bus(:, BUS_I) + 100; "
+              "m.gen(:, GEN_BUS) = m.gen(:, GEN_BUS) + 100; m.branch(:, [F_BUS T_BUS]) = m.branch(:, [F_BUS T_BUS]) + 100; "
+              "savecase('case9_shift.m', m); prepare_case('case9_shift', 'prepared.mat', 'busmap.csv'); "
+              "neutrality_check('case9_shift', 'prepared.mat', 'busmap.csv', 'neutrality.csv');")
+    (tmp_path / "neutrality.csv").write_text("case,max_abs_vm,max_abs_va_deg,max_abs_pf,max_abs_qf,max_abs_pt,max_abs_qt,"
+                                            "iterations_original,iterations_prepared,success_original,success_prepared,busmap_bijection,maps_back\n")
+    subprocess.run(["octave", "--no-gui", "--eval", f"addpath('{os.path.dirname(HERE)}'); {script}"], cwd=tmp_path,
+                   check=True, capture_output=True)
+    bm = list(csv.DictReader(open(tmp_path / "busmap.csv")))
+    assert sorted(int(r["new_bus"]) for r in bm) == list(range(1, 10))
+    assert sorted(int(r["old_bus"]) for r in bm) == list(range(101, 110))
+    r = list(csv.DictReader(open(tmp_path / "neutrality.csv")))[-1]
+    assert float(r["max_abs_vm"]) <= 1e-9 and float(r["max_abs_va_deg"]) <= 1e-9
+    assert max(float(r[k]) for k in ("max_abs_pf", "max_abs_qf", "max_abs_pt", "max_abs_qt")) <= 1e-6
+    assert r["iterations_original"] == r["iterations_prepared"] and r["busmap_bijection"] == "1" and r["maps_back"] == "1"
