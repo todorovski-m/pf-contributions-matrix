@@ -188,6 +188,55 @@ def test_quiet_wait_is_outside_the_samples(tmp_path, monkeypatch):
     assert (smp[smp["phase"].isna()]["ns"] < 0.3e9).all()
 
 
+def _crafted_folder(path):
+    """A results folder with known medians: port off 1, 4, 16 ms and old 100, 800, 6400 ms at n_e 500, 1000, 2000
+    (local slopes 2 and 3), plus a small case at n_e 10; the old cell at n_e 2000 is slow and not quiet."""
+    import csv as _csv, json as _json
+    os.makedirs(path, exist_ok=True)
+    cases = {"s": 10, "a": 500, "b": 1000, "c": 2000}
+    port = {"s": 1e6, "a": 1e6, "b": 4e6, "c": 16e6}; old = {"s": 2e6, "a": 100e6, "b": 800e6, "c": 6400e6}
+    env = {"label": "series", "smoke": False, "args": {"timeout": 1800.0},
+           "cases": {c: {"n_e_apfc": n, "dense_bytes_apfc": 8 * n, "quiet": True} for c, n in cases.items()}}
+    _json.dump(env, open(os.path.join(path, "environment.json"), "w"))
+    with open(os.path.join(path, "samples.csv"), "w", newline="") as fh:
+        w = _csv.writer(fh); w.writerow(["label", "case", "method", "kind", "checks", "repetition", "ns", "phase"])
+        for c in cases:
+            for k in range(3):
+                w.writerow(["series", c, "port", "apfc", "off", k + 1, int(port[c]), ""])
+                w.writerow(["series", c, "old", "apfc", "", k + 1, int(old[c]), ""])
+    with open(os.path.join(path, "cells.csv"), "w", newline="") as fh:
+        w = _csv.writer(fh); w.writerow(["label", "case", "checks", "kind", "method", "n", "slow", "status", "warmup", "quiet"])
+        for c in cases:
+            w.writerow(["series", c, "off", "apfc", "port", 3, False, "ok", 2, True])
+            w.writerow(["series", c, "", "apfc", "old", 3, c == "c", "ok", 2, c != "c"])
+    with open(os.path.join(path, "guard.csv"), "w", newline="") as fh:
+        w = _csv.writer(fh); w.writerow(["label", "case", "kind", "columns"])
+        for c in cases:
+            w.writerow(["series", c, "apfc", 7])
+
+
+def test_summary_ratio_slow_cells_and_slopes(tmp_path):
+    import summarize as S
+    f = tmp_path / "res"; _crafted_folder(str(f))
+    rows, slopes, locs = S.summarize(str(f))
+    r = {(x["case"], x["method"]): x for x in rows}
+    assert r[("c", "old")]["status"] == "ok (slow)" and abs(r[("c", "old")]["ratio_old_over_port_off"] - 400.0) < 1e-12
+    assert r[("c", "old")]["quiet"] is False and r[("c", "port")]["dense_table_bytes"] == 16000 and r[("c", "port")]["table_columns"] == 7
+    port = [l for l in locs if l["method"] == "port"]
+    assert [(l["case_from"], l["case_to"]) for l in port] == [("a", "b"), ("b", "c")]
+    assert all(abs(l["slope"] - 2.0) < 1e-12 for l in port)
+    oldl = [l for l in locs if l["method"] == "old"]
+    assert all(abs(l["slope"] - 3.0) < 1e-12 for l in oldl) and oldl[-1]["not_quiet"] == "c"
+    sp = {(x["method"], x["checks"], x["kind"]): x for x in slopes}
+    assert sp[("port", "off", "apfc")]["points_ne_ge_500"] == 3 and abs(sp[("port", "off", "apfc")]["slope_ne_ge_500"] - 2.0) < 1e-12
+    assert sp[("old", "", "apfc")]["points_ne_ge_500"] == 3 and sp[("old", "", "apfc")]["not_quiet_ne_ge_500"] == "c"
+    # the global slope keeps its earlier rule (status exactly ok): the slow old cell is not in it
+    assert sp[("old", "", "apfc")]["cases"] == "s a b"
+    import plot_timing as P
+    for out in P.plot(str(f)):
+        assert os.path.getsize(out) > 0
+
+
 def test_port_runner_phases():
     data = C.load("case9", C.input_dirs())
     table, ph = T.port_runner(data, "rpfc", True)()

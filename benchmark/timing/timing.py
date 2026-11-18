@@ -300,7 +300,7 @@ def guard(data, kind, itermax, timeout_s, branch_old):
     Returns a dict with 'ok', 'old_status', 'iterations', 'guard_checks' and the numbers."""
     out = {"case": data["case"], "kind": kind}
     table, pub, flows, info = port_flows(data, kind)
-    out["n_e"] = info["n_e"]; out["nnz_N"] = info["nnz_N"]; out["rows"] = len(table)
+    out["n_e"] = info["n_e"]; out["nnz_N"] = info["nnz_N"]; out["rows"] = len(table); out["columns"] = table.shape[1]
     out["port_equal_public"] = bool(table.equals(pub))
     out["port_rowsum"] = float(np.abs(table.to_numpy().sum(axis=1) - flows).max()) if len(flows) else 0.0
     cmpd = None

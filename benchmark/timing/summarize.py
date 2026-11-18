@@ -1,7 +1,12 @@
 """Summarise a results folder of timing.py: per-cell statistics, the phase fractions of the port, the ratio old/port of
-the medians, and, for the cases ordered by n_e, the slope of a log-log fit of the median time against n_e for each
-method and kind (with the cases used). Writes summary.md and summary.csv into the folder. When the environment record
-says smoke, every output carries the label "smoke, not for publication".
+the medians (for every cell where both finished, slow cells included), the dense table size and the number of table
+columns, and the slopes of log10(median time) against log10(n_e) per method, checks and kind:
+  - local slopes between consecutive cases (ordered by n_e) with n_e >= 500, each with its two cases (T14e);
+  - one least-squares slope over the cases with n_e >= 500, with the number of points (T14e);
+  - the earlier global slope over all cases, labelled "all cases, dominated by fixed overhead".
+A median whose cell (or, for folders without per-cell flags, whose case) is not quiet is marked.
+Writes summary.md, summary.csv, summary_slopes.csv and summary_local_slopes.csv into the folder. When the environment
+record says smoke, every output carries the label "smoke, not for publication".
 
 Usage: python -B benchmark/timing/summarize.py <results folder>
 """
@@ -31,7 +36,9 @@ def load(folder):
             else:
                 total[key].append(int(r["ns"]))
     cells = list(csv.DictReader(open(os.path.join(folder, "cells.csv"))))
-    return env, total, phase, cells
+    gp = os.path.join(folder, "guard.csv")
+    guard = list(csv.DictReader(open(gp))) if os.path.exists(gp) else []
+    return env, total, phase, cells, guard
 
 
 def loglog_slope(points):
@@ -42,14 +49,39 @@ def loglog_slope(points):
     return float(np.polyfit(x, y, 1)[0])
 
 
+NE_MIN = 500
+
+
+def base_status(st):
+    """The status without the slow flag: 'ok (slow)' -> 'ok'."""
+    return st[:-len(" (slow)")] if st.endswith(" (slow)") else st
+
+
+def local_slopes(points):
+    """Slopes between consecutive points (n_e, median, case, quiet) ordered by n_e, for n_e >= NE_MIN; equal n_e skipped."""
+    pts = sorted(p for p in points if p[0] >= NE_MIN)
+    out = []
+    for a, b in zip(pts, pts[1:]):
+        if b[0] == a[0]:
+            continue
+        out.append({"case_from": a[2], "case_to": b[2], "n_e_from": a[0], "n_e_to": b[0],
+                    "slope": float(np.log10(b[1] / a[1]) / np.log10(b[0] / a[0])),
+                    "not_quiet": ", ".join(p[2] for p in (a, b) if p[3] is False)})
+    return out
+
+
 def summarize(folder):
-    env, total, phase, cells = load(folder)
+    env, total, phase, cells, guard = load(folder)
     smoke = bool(env.get("smoke"))
     label = SMOKE_LABEL if smoke else "series"
     # a slow cell (slow-cell rule: a single run above the threshold, 3 repetitions) is flagged in its status
     status = {(c["case"], c["method"], c["kind"], c["checks"]): c["status"] + (" (slow)" if c.get("slow") == "True" else "")
               for c in cells}
     n_e = {(c, k): env["cases"][c].get(f"n_e_{k}") for c in env["cases"] for k in ("apfc", "rpfc")}
+    dense = {(c, k): env["cases"][c].get(f"dense_bytes_{k}") for c in env["cases"] for k in ("apfc", "rpfc")}
+    ncols = {(r["case"], r["kind"]): (int(r["columns"]) if r.get("columns") else None) for r in guard}
+    # quiet per cell when the folder has the T14e flags, else the flag of the case
+    cq = {(c["case"], c["method"], c["kind"], c["checks"]): (c["quiet"] == "True") for c in cells if c.get("quiet") not in (None, "")}
     rows = []
     for key in sorted(set(status) | set(total), key=lambda k: (k[0], k[2], k[1], k[3])):
         case, method, kind, checks = key
@@ -57,55 +89,83 @@ def summarize(folder):
             continue
         s = stats(total.get(key, []))
         row = {"label": label, "case": case, "method": method, "kind": kind, "checks": checks,
-               "status": status.get(key, ""), "n_e": n_e.get((case, kind)), "quiet": env["cases"].get(case, {}).get("quiet"),
+               "status": status.get(key, ""), "n_e": n_e.get((case, kind)),
+               "quiet": cq.get(key, env["cases"].get(case, {}).get("quiet")),
+               "dense_table_bytes": dense.get((case, kind)), "table_columns": ncols.get((case, kind)),
                **{f"{k}_ns": s[k] for k in ("min", "median", "mean", "std", "iqr")}, "n": s["n"]}
         if method == "port" and s["n"]:
             for p in PORT_PHASES:
                 v = phase[key].get(p)
                 row[f"fraction_{p}"] = (float(np.median(v)) / s["median"]) if v else None
         rows.append(row)
-    med = {(r["case"], r["method"], r["kind"], r["checks"]): r["median_ns"] for r in rows if r["status"] == "ok"}
+    med = {(r["case"], r["method"], r["kind"], r["checks"]): r["median_ns"] for r in rows if base_status(r["status"]) == "ok"}
     for r in rows:
-        if r["method"] == "old" and r["status"] == "ok":
+        if r["method"] == "old" and base_status(r["status"]) == "ok":
             p = med.get((r["case"], "port", r["kind"], "off"))
             r["ratio_old_over_port_off"] = (r["median_ns"] / p) if p else None
-    slopes = []
+    slopes, locs = [], []
     for method, checks in (("port", "off"), ("port", "on"), ("old", "")):
         for kind in ("apfc", "rpfc"):
+            # the global slope over all cases: the cells with status exactly ok, as before T14e (reproducible)
             pts = sorted((r["n_e"], r["median_ns"], r["case"]) for r in rows
                          if r["method"] == method and r["checks"] == checks and r["kind"] == kind and r["status"] == "ok" and r["n_e"])
+            # the large end: every finished cell (slow ones included) with n_e >= NE_MIN
+            big = sorted((r["n_e"], r["median_ns"], r["case"], r["quiet"]) for r in rows
+                         if r["method"] == method and r["checks"] == checks and r["kind"] == kind
+                         and base_status(r["status"]) == "ok" and r["n_e"] and r["n_e"] >= NE_MIN)
             slopes.append({"label": label, "method": method, "checks": checks, "kind": kind,
-                           "slope": loglog_slope(pts), "cases": " ".join(p[2] for p in pts)})
+                           "slope": loglog_slope(pts), "cases": " ".join(p[2] for p in pts),
+                           "slope_ne_ge_500": loglog_slope(big), "points_ne_ge_500": len(big),
+                           "cases_ne_ge_500": " ".join(p[2] for p in big),
+                           "not_quiet_ne_ge_500": " ".join(p[2] for p in big if p[3] is False)})
+            for l in local_slopes(big):
+                locs.append({"label": label, "method": method, "checks": checks, "kind": kind, **l})
     cols = ["label", "case", "method", "kind", "checks", "status", "n_e", "quiet", "n", "min_ns", "median_ns", "mean_ns", "std_ns",
-            "iqr_ns", "ratio_old_over_port_off"] + [f"fraction_{p}" for p in PORT_PHASES]
+            "iqr_ns", "ratio_old_over_port_off"] + [f"fraction_{p}" for p in PORT_PHASES] + ["dense_table_bytes", "table_columns"]
     with open(os.path.join(folder, "summary.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore"); w.writeheader()
         for r in rows:
             w.writerow({k: r.get(k) for k in cols})
     with open(os.path.join(folder, "summary_slopes.csv"), "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=["label", "method", "checks", "kind", "slope", "cases"]); w.writeheader()
+        w = csv.DictWriter(fh, fieldnames=["label", "method", "checks", "kind", "slope", "cases", "slope_ne_ge_500",
+                                           "points_ne_ge_500", "cases_ne_ge_500", "not_quiet_ne_ge_500"]); w.writeheader()
         for s in slopes:
             w.writerow(s)
+    with open(os.path.join(folder, "summary_local_slopes.csv"), "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["label", "method", "checks", "kind", "case_from", "case_to", "n_e_from", "n_e_to",
+                                           "slope", "not_quiet"]); w.writeheader()
+        for l in locs:
+            w.writerow(l)
     md = [f"**{label}**" if smoke else "", "",
           f"Environment: {env.get('cpu_model')}, {env.get('cores_logical')} cores, {env.get('os')}; git {env.get('git_matrix')}; "
           f"date {env.get('date_local')}.", "",
-          f"| case | method | kind | checks | status | n_e | quiet | n | min (ns) | median (ns) | mean (ns) | std (ns) | IQR (ns) | old/port median (checks off) | {' | '.join('fraction ' + p for p in PORT_PHASES)} |",
-          "|" + "---|" * (14 + len(PORT_PHASES))]
+          f"| case | method | kind | checks | status | n_e | quiet | n | min (ns) | median (ns) | mean (ns) | std (ns) | IQR (ns) | old/port median (checks off) | {' | '.join('fraction ' + p for p in PORT_PHASES)} | dense table bytes | table columns |",
+          "|" + "---|" * (16 + len(PORT_PHASES))]
     for r in rows:
         md.append("| " + " | ".join(str(x) if not isinstance(x, float) else g(x) for x in
                                      [r["case"], r["method"], r["kind"], r["checks"] or "-", r["status"], r["n_e"], r["quiet"], r["n"],
                                       r["min_ns"], r["median_ns"], r["mean_ns"], r["std_ns"], r["iqr_ns"],
-                                      r.get("ratio_old_over_port_off")] + [r.get(f"fraction_{p}") for p in PORT_PHASES]).replace("None", "") + " |")
-    md += ["", "Slope of log10(median time) against log10(n_e), cases ordered by n_e:", "",
-           "| method | checks | kind | slope | cases used |", "|---|---|---|---|---|"]
+                                      r.get("ratio_old_over_port_off")] + [r.get(f"fraction_{p}") for p in PORT_PHASES]
+                                     + [r.get("dense_table_bytes"), r.get("table_columns")]).replace("None", "") + " |")
+    md += ["", f"Slope of log10(median time) against log10(n_e): one least-squares fit over the cases with n_e >= {NE_MIN} "
+           "(finished cells, slow ones included), and, separately, the fit over all cases (cells with status ok), which "
+           "is dominated by the fixed overhead of the small cases:", "",
+           f"| method | checks | kind | slope, n_e >= {NE_MIN} | points | cases (n_e >= {NE_MIN}) | not quiet among them | "
+           "slope, all cases, dominated by fixed overhead | cases (all) |", "|---|---|---|---|---|---|---|---|---|"]
     for s in slopes:
-        md.append(f"| {s['method']} | {s['checks'] or '-'} | {s['kind']} | {g(s['slope'])} | {s['cases']} |")
+        md.append(f"| {s['method']} | {s['checks'] or '-'} | {s['kind']} | {g(s['slope_ne_ge_500'])} | {s['points_ne_ge_500']} | "
+                  f"{s['cases_ne_ge_500']} | {s['not_quiet_ne_ge_500']} | {g(s['slope'])} | {s['cases']} |")
+    md += ["", f"Local slopes between consecutive cases (ordered by n_e, n_e >= {NE_MIN}):", "",
+           "| method | checks | kind | from case (n_e) | to case (n_e) | local slope | not quiet |", "|---|---|---|---|---|---|---|"]
+    for l in locs:
+        md.append(f"| {l['method']} | {l['checks'] or '-'} | {l['kind']} | {l['case_from']} ({l['n_e_from']}) | "
+                  f"{l['case_to']} ({l['n_e_to']}) | {g(l['slope'])} | {l['not_quiet']} |")
     if smoke:
         md.insert(1, f"All numbers in this table are from a {SMOKE_LABEL} run.")
     open(os.path.join(folder, "summary.md"), "w").write("\n".join(md) + "\n")
-    return rows, slopes
+    return rows, slopes, locs
 
 
 if __name__ == "__main__":
     summarize(sys.argv[1])
-    print(f"wrote summary.md, summary.csv and summary_slopes.csv in {sys.argv[1]}")
+    print(f"wrote summary.md, summary.csv, summary_slopes.csv and summary_local_slopes.csv in {sys.argv[1]}")

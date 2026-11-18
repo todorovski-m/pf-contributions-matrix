@@ -35,4 +35,5 @@ print "git: $(git rev-parse HEAD)$([[ -n "$(git status --porcelain)" ]] && print
 export PFC_CAFFEINATE=1
 caffeinate -i $PY -B benchmark/timing/timing.py run --out $OUT --syn-inputs $SYN $EXTRA "$@"
 $PY -B benchmark/timing/summarize.py $OUT
+$PY -B benchmark/timing/plot_timing.py $OUT
 print "done: $OUT/summary.md"
