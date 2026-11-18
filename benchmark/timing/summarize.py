@@ -53,8 +53,11 @@ NE_MIN = 500
 
 
 def base_status(st):
-    """The status without the slow flag: 'ok (slow)' -> 'ok'."""
-    return st[:-len(" (slow)")] if st.endswith(" (slow)") else st
+    """The status without the flags: 'ok (slow)' and 'ok (predicted stall, but finished)' -> 'ok'."""
+    for flag in (" (slow)", " (predicted stall, but finished)"):
+        if st.endswith(flag):
+            st = st[:-len(flag)]
+    return st
 
 
 def local_slopes(points):

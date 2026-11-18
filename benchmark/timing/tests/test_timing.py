@@ -284,6 +284,48 @@ def test_division_by_zero_risk_on_the_large_combinations():
     assert risky == OBSERVED_DIVISION_BY_ZERO
 
 
+def _mock_predictor(monkeypatch, label="predicted stall", n=5):
+    import old_stall_predictor
+    monkeypatch.setattr(old_stall_predictor, "predict", lambda *a, **k: {
+        "label": label, "predicted": n, "division_by_zero_risk": 0, "risk_label": "no division-by-zero risk"})
+
+
+def test_stall_probe_on_a_predicted_stall(monkeypatch):
+    data = C.load("case9", C.input_dirs()); branch_old = C.correct_qsf(data)[0]
+    _mock_predictor(monkeypatch)
+    seen = {}
+
+    def old(data_, kind, itermax, branch, timeout_s):
+        seen["itermax"], seen["timeout"] = itermax, timeout_s
+        return None, None, False, itermax
+    monkeypatch.setattr(T, "old_with_iterations", old)
+    g = T.guard(data, "rpfc", 10000, 1800, branch_old, probe=True)
+    assert seen == {"itermax": 300, "timeout": 120.0}
+    assert g["ok"] and g["old_status"] == "did not finish (iteration cap)" and g["iterations"] == 300
+    assert g["guard_checks"] == "port only (old did not finish)" and g["probe"] == "itermax 300, time-out 120 s"
+    assert g["predictor"] == "predicted stall" and g["predicted_unprocessed"] == 5 and not g["probe_finished"]
+    # without the probe the full settings are used
+    T.guard(data, "rpfc", 10000, 1800, branch_old, probe=False)
+    assert seen == {"itermax": 10000, "timeout": 1800}
+
+
+def test_stall_probe_wrong_prediction_is_timed(tmp_path, monkeypatch):
+    # the predictor (mocked) says stall, the real old method finishes on case9: recorded loudly, compared, and timed
+    _mock_predictor(monkeypatch)
+    out = tmp_path / "res"
+    T.main(["run", "--out", str(out), "--combos", "case9:apfc", "--budget", "0.05", "--min-rep", "2", "--max-rep", "3",
+            "--warmup", "1", "--no-memory", "--smoke", "--quiet-wait", "0", "--stall-probe"])
+    import pandas as pd
+    cells = pd.read_csv(out / "cells.csv"); guard = pd.read_csv(out / "guard.csv")
+    old = cells[cells["method"] == "old"].iloc[0]
+    assert old["status"] == "ok (predicted stall, but finished)" and old["n"] > 0
+    g = guard.iloc[0]
+    assert bool(g["ok"]) and bool(g["probe_finished"]) and g["guard_checks"] == "port and old (old finished)"
+    import summarize as S
+    rows, _, _ = S.summarize(str(out))
+    assert [r for r in rows if r["method"] == "old"][0]["ratio_old_over_port_off"] is not None
+
+
 def test_port_runner_phases():
     data = C.load("case9", C.input_dirs())
     table, ph = T.port_runner(data, "rpfc", True)()

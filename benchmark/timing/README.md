@@ -88,6 +88,13 @@ Before a case is timed, both methods are run once in memory, with the row mappin
 - **When the old method finishes, also:** every port row maps, every mapped cell agrees within 1e-10, and the port row sums equal the old flows within 1e-10.
 - **When the old method does not finish** (iteration cap, time-out or error; T14e): only the port's own conditions are checked, and the old status is recorded. An unfinished old table is not a reference, so its cells, its row errors and the port rows that cannot be mapped to it are not compared. `guard.csv` records which checks were applied (`guard_checks`).
 
+**Stall probe (T14f, on by default in `run_timing.sh`; `--no-stall-probe` restores the full run).**
+- **What it does:** for a combination that `old_stall_predictor.py` labels "predicted stall", the old method's guard run uses `itermax` 300 and a time-out of 120 s, instead of the series settings (cap 10000, 1800 s).
+- **What is recorded:** the status as before ("did not finish (iteration cap)", "(time-out)" or "(error ...)"), with the probe settings and the predictor's numbers (`probe`, `predictor`, `predicted_unprocessed`, `division_by_zero_risk` in `guard.csv`). The guard stays port-only for these combinations.
+- **A wrong prediction:** if the probe finishes, the old cell's status says so loudly ("ok (predicted stall, but finished)"). The guard compares it as a finished old method, and it is timed like any finished one.
+- **What it does not replace:** the probe only confirms the prediction cheaply. The full observations at cap 10000 and 1800 s are those of T14c and T14d (the old method stagnates exactly from an early sweep on).
+- **Division-by-zero risk alone:** combinations with this risk but no predicted stall are run normally; the error comes within seconds.
+
 A case that fails the guard is flagged and not timed. Before T14e, `case1354pegase` RPFC failed it on the unfinished old table: three port rows had no counterpart, and inductive branch-end shunt rows `Tf_<bus>` of buses with several such rows were paired by order of occurrence, which differs between the methods.
 
 **Known issue of the iterative pipeline:** `my_runpf.m` computes QSF with B/2 instead of B/(2·tap²). Before the guard and the timing, QSF is therefore replaced in the branches with tap ≠ 1 and BR_B ≠ 0 by the Qsf that `rpfc.m` computes (`branch_shunt_flows` of the port). This happens outside the timed region, and `environment.json` lists the cases and rows.

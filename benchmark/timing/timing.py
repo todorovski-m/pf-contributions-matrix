@@ -289,7 +289,11 @@ def compare_old_in_memory(table_old, fq, branch_raw, port_table, kind, done):
             "old_rowsum": rsmax, "unmapped_old_columns": unm_o, "unmapped_matrix_columns": unm_m}
 
 
-def guard(data, kind, itermax, timeout_s, branch_old):
+PROBE_ITERMAX, PROBE_TIMEOUT_S = 300, 120.0     # the stall probe (T14f)
+PROBE_FINISHED = "predicted stall, but finished"
+
+
+def guard(data, kind, itermax, timeout_s, branch_old, probe=False):
     """Before timing: the port (phase composition equal to the public function; row sums equal the flows within 1e-10)
     and the old method in memory (with the corrected QSF).
     - The old method finishes: its table is compared with the port's (every mapped cell within 1e-10, every port row
@@ -297,6 +301,11 @@ def guard(data, kind, itermax, timeout_s, branch_old):
     - The old method does not finish (iteration cap, time-out or error, T14e): only the port's own conditions are
       checked and the old status is recorded; the old table, its row errors and the unmappable port rows are not
       compared (an unfinished old table is not a reference).
+    - Stall probe (T14f, probe=True): when old_stall_predictor.py labels the combination "predicted stall", the old
+      method's guard run uses itermax PROBE_ITERMAX and a time-out of PROBE_TIMEOUT_S instead (it only confirms the
+      prediction; the full observations at cap 10000 and 1800 s are those of T14c and T14d). The probe settings and the
+      predictor's numbers are recorded. If the probe finishes, 'probe_finished' is True: the comparison of a finished
+      old method applies, and the old method is timed like any finished one.
     Returns a dict with 'ok', 'old_status', 'iterations', 'guard_checks' and the numbers."""
     out = {"case": data["case"], "kind": kind}
     table, pub, flows, info = port_flows(data, kind)
@@ -304,11 +313,21 @@ def guard(data, kind, itermax, timeout_s, branch_old):
     out["port_equal_public"] = bool(table.equals(pub))
     out["port_rowsum"] = float(np.abs(table.to_numpy().sum(axis=1) - flows).max()) if len(flows) else 0.0
     cmpd = None
+    import old_stall_predictor
+    pr = old_stall_predictor.predict(data, kind, branch_old)
+    out["predictor"] = pr["label"]; out["predicted_unprocessed"] = pr["predicted"]
+    out["division_by_zero_risk"] = pr["division_by_zero_risk"]
+    use_itermax, use_timeout = itermax, timeout_s
+    if probe and pr["label"] == "predicted stall":
+        use_itermax, use_timeout = PROBE_ITERMAX, min(PROBE_TIMEOUT_S, timeout_s)
+        out["probe"] = f"itermax {use_itermax}, time-out {use_timeout:g} s"
+    out["probe_finished"] = False
     try:
         import correctness           # the row mapping with the terminal classification (T15b, T14c)
-        flows_old, t_old, done, iters = old_with_iterations(data, kind, itermax, branch_old, timeout_s)
+        flows_old, t_old, done, iters = old_with_iterations(data, kind, use_itermax, branch_old, use_timeout)
         out["old_status"] = "ok" if done else "did not finish (iteration cap)"
         out["iterations"] = iters
+        out["probe_finished"] = bool(done and "probe" in out)
         if done:
             c = correctness.compare(data, kind, t_old, flows_old, table)
             cmpd = {"unmapped_matrix_rows": c["unmapped_port_rows"], "max_cell": c["max_cell"],
@@ -493,7 +512,7 @@ def run_series(a):
                               "status": f"not timed (estimated dense tables {est} bytes > limit {int(limit)} bytes)"})
                 continue
             try:
-                g = guard(data, kind, a.itermax, a.timeout, branch_old)
+                g = guard(data, kind, a.itermax, a.timeout, branch_old, probe=a.stall_probe)
             except Exception as e:
                 cells.append({"case": c, "method": "all", "kind": kind, "checks": "",
                               "status": f"not timed (guard raises {getattr(e, 'identifier', type(e).__name__)}: {str(e)[:200]})"})
@@ -524,7 +543,8 @@ def run_series(a):
                     for p_, v in (ph or {}).items():
                         sw.writerow([env["label"], c, method, kind, ch, k, v, p_])
                 samples_f.flush()
-                cells.append({"case": c, "method": method, "kind": kind, "checks": ch, "status": r["status"],
+                st = r["status"] + (f" ({PROBE_FINISHED})" if method == "old" and g.get("probe_finished") else "")
+                cells.append({"case": c, "method": method, "kind": kind, "checks": ch, "status": st,
                               "n": len(r["samples"]), "warmup": r["warmup"], "slow": r["slow"],
                               "quiet": qw["quiet"], "wait_s": qw["wait_s"], "load1_start": qw["load1_start"],
                               "load1_at_cell": qw["load1_end"]})
@@ -569,6 +589,9 @@ def main(argv=None):
     r.add_argument("--quiet-wait", type=float, default=300.0,
                    help="before each cell, wait at most this many seconds for the one-minute load average to fall below 0.25 x cores")
     r.add_argument("--quiet-poll", type=float, default=10.0, help="polling interval of the quiet wait, seconds")
+    r.add_argument("--stall-probe", dest="stall_probe", action="store_true", default=False,
+                   help="guard run of the old method with itermax 300 and a 120 s time-out for predicted stalls")
+    r.add_argument("--no-stall-probe", dest="stall_probe", action="store_false")
     r.add_argument("--mem-fraction", type=float, default=0.5,
                    help="skip a cell whose estimated dense tables exceed this fraction of the physical memory")
     m = sub.choices["memory"]
