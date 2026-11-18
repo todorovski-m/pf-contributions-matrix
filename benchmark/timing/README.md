@@ -28,7 +28,9 @@ Every option of `timing.py run` can be added, for example `--cases case9,case118
 |---|---|
 | `timing.py` | measurement, statistics, time-out, guard, memory measurement, environment record, the series (`run`) |
 | `cases.py` | the case lists, the loading through `load_results`, the import of the iterative method, the QSF correction |
-| `summarize.py` | per-cell statistics, phase fractions, the ratio of the medians, log-log slopes against `n_e` |
+| `summarize.py` | per-cell statistics, phase fractions, the ratio of the medians, table sizes, local and large-end log-log slopes against `n_e` |
+| `plot_timing.py` | figures of a results folder: time against `n_e` (log-log) and the ratio old/port against `n_e`, PDF and PNG |
+| `old_stall_predictor.py` | static prediction of where the old method stalls (no old-method run) |
 | `run_timing.sh` | the full series under `caffeinate -i` |
 | `export_large.sh`, `raw_counts.m`, `scan.py` | export and scan of the large cases |
 
@@ -64,7 +66,13 @@ Both methods start from the in-memory DataFrames `bus`, `gen` and `branch` of `l
 - **Reported per cell:** n, minimum, median, mean, standard deviation and interquartile range; every raw sample is kept.
 - **Memory:** the peak resident set size of one run of each method (`resource.getrusage`, `ru_maxrss`), in a fresh subprocess per method and case, before and after the run. The unit is in the environment record (bytes on macOS, kibibytes on Linux).
 - **Threads:** `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS` and `NUMEXPR_NUM_THREADS` are set to 1 before numpy is imported; the BLAS configuration of numpy is recorded.
-- **Summary:** `summarize.py` gives the phase fractions of the port (median of a phase divided by the median of the run), the ratio old/port of the medians (port with `checks=False`), and, for each method and kind, the slope of a least-squares fit of log10(median) against log10(`n_e`), with the cases used.
+- **Summary:** `summarize.py` gives per cell the phase fractions of the port (median of a phase divided by the median of the run), the ratio old/port of the medians (port with `checks=False`; for every cell where both finished, cells flagged slow included), the dense table size in bytes and the number of table columns. For each method, checks setting and kind it gives the slopes of log10(median) against log10(`n_e`):
+  - **local slopes** between consecutive cases with `n_e` >= 500, each with its two cases (`summary_local_slopes.csv`);
+  - **one least-squares slope over the cases with `n_e` >= 500**, with the number of points;
+  - **the earlier global slope over all cases**, kept in its own column labelled "all cases, dominated by fixed overhead": the small cases sit at a fixed overhead of a few milliseconds and do not describe the large end.
+
+  A median whose cell is not quiet is marked. Local slopes between cases of nearly equal `n_e` reflect differences in structure as much as size and can even be negative; they are not growth rates.
+- **Figures:** `plot_timing.py` draws time against `n_e` (log-log, checks off, both methods and kinds) and the ratio old/port against `n_e`. A cell where the old method did not finish is drawn at the run's time-out with one marker per failure kind (time-out, iteration cap, error); that position is a limit, not a measured time. `run_timing.sh` calls it after `summarize.py`.
 
 ## Factorisation facts
 
@@ -75,12 +83,12 @@ Both methods start from the in-memory DataFrames `bus`, `gen` and `branch` of `l
 
 ## Guard before timing
 
-Before a case is timed, both methods are run once in memory and compared, with the helper functions of `tests/compare_old.py` (unchanged). The case is timed only if:
-- all rows map, and every cell agrees within 1e-10 when the iterative method finishes;
-- the row sums equal the flows within 1e-10, for both methods;
-- the port's phase composition gives the same table as `apfc`/`rpfc`.
+Before a case is timed, both methods are run once in memory, with the row mapping of `correctness.py` (helper functions of `tests/compare_old.py`, unchanged).
+- **Always (the port's own conditions):** the port's phase composition gives the same table as `apfc`/`rpfc`, and its row sums equal the flows within 1e-10.
+- **When the old method finishes, also:** every port row maps, every mapped cell agrees within 1e-10, and the port row sums equal the old flows within 1e-10.
+- **When the old method does not finish** (iteration cap, time-out or error; T14e): only the port's own conditions are checked, and the old status is recorded. An unfinished old table is not a reference, so its cells, its row errors and the port rows that cannot be mapped to it are not compared. `guard.csv` records which checks were applied (`guard_checks`).
 
-Otherwise the case is flagged and not timed.
+A case that fails the guard is flagged and not timed. Before T14e, `case1354pegase` RPFC failed it on the unfinished old table: three port rows had no counterpart, and inductive branch-end shunt rows `Tf_<bus>` of buses with several such rows were paired by order of occurrence, which differs between the methods.
 
 **Known issue of the iterative pipeline:** `my_runpf.m` computes QSF with B/2 instead of B/(2·tap²). Before the guard and the timing, QSF is therefore replaced in the branches with tap ≠ 1 and BR_B ≠ 0 by the Qsf that `rpfc.m` computes (`branch_shunt_flows` of the port). This happens outside the timed region, and `environment.json` lists the cases and rows.
 
@@ -168,6 +176,17 @@ PYTHON=/Users/mirko/.pyenv/shims/python zsh benchmark/timing/run_timing.sh
 Without `--smoke`, `--combos` or `--cases`, this runs every combination of `cases.py` (the 14 small cases with both
 kinds and every usable large combination whose export exists) with the defaults above. A run with `--smoke` is a test
 of the machinery and is labelled "smoke, not for publication".
+
+- **Order of the two commands:** run `export_large.sh` well before the series, not right before it. The export runs Octave and leaves a high load average, which the first series (T14e) started under. The series now waits up to 300 s per cell for a quiet machine (`--quiet-wait`), but a cell whose wait expires is still timed and flagged `quiet` False.
+- **After the series:** check that every cell in `cells.csv` has `quiet` True. For a cell flagged False, `environment.json` names the three busiest processes at that moment.
+- **Expected stalls:** the old-method runs that stall (`old_stall_predictor.py`) run until the iteration cap or the time-out of 1800 s in the guard, and are recorded as "did not finish".
+
+### Where the old method stalls: a static predictor
+
+The old method is a sweep over the buses, not a numerical iteration (T14d): it processes a bus once, when every branch that flows into it is known, and never revisits it. `old_stall_predictor.py` builds the old method's initial inflow and outflow sets with its own preprocessing (`makeActiveFlows`, `makeReactiveFlows`) and the sign rules of its set construction. It then finds the buses that can never be processed: those in cyclic strongly connected components of the dependency digraph, those with an orphan inflow (a branch that flows into a bus but out of none, for example a reactive branch with zero exported from-end flow), and every bus downstream of these.
+- **Can say:** whether the old method can finish ("can finish") or stalls ("predicted stall"), and which buses stay unprocessed. It was validated against the observed runs of T14d (equal sets) and every combination of the first series, for both kinds.
+- **Cannot say:** whether the old method raises an exception inside a sweep (the division by zero of four large combinations), how many sweeps it needs, or how long a sweep takes. A time-out of a combination predicted "can finish" is a matter of size.
+- **Usage:** `python -B benchmark/timing/old_stall_predictor.py --combos case2869pegase:rpfc,case_ACTIVSg10k:apfc [--observed <results>/iterations.csv]`. It does not run the old method.
 
 ### Correctness before timing
 
