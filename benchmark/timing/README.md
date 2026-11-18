@@ -30,7 +30,8 @@ Every option of `timing.py run` can be added, for example `--cases case9,case118
 | `cases.py` | the case lists, the loading through `load_results`, the import of the iterative method, the QSF correction |
 | `summarize.py` | per-cell statistics, phase fractions, the ratio of the medians, table sizes, local and large-end log-log slopes against `n_e` |
 | `plot_timing.py` | figures of a results folder: time against `n_e` (log-log) and the ratio old/port against `n_e`, PDF and PNG |
-| `old_stall_predictor.py` | static prediction of where the old method stalls (no old-method run) |
+| `old_stall_predictor.py` | static prediction of where the old method stalls, and of its division-by-zero risk (no old-method run) |
+| `duration_estimate.py` | bounds of the duration of the series from its settings (no measurement) |
 | `run_timing.sh` | the full series under `caffeinate -i` |
 | `export_large.sh`, `raw_counts.m`, `scan.py` | export and scan of the large cases |
 
@@ -72,7 +73,8 @@ Both methods start from the in-memory DataFrames `bus`, `gen` and `branch` of `l
   - **the earlier global slope over all cases**, kept in its own column labelled "all cases, dominated by fixed overhead": the small cases sit at a fixed overhead of a few milliseconds and do not describe the large end.
 
   A median whose cell is not quiet is marked. Local slopes between cases of nearly equal `n_e` reflect differences in structure as much as size and can even be negative; they are not growth rates.
-- **Figures:** `plot_timing.py` draws time against `n_e` (log-log, checks off, both methods and kinds) and the ratio old/port against `n_e`. A cell where the old method did not finish is drawn at the run's time-out with one marker per failure kind (time-out, iteration cap, error); that position is a limit, not a measured time. `run_timing.sh` calls it after `summarize.py`.
+- **Against the dense table size (T14f):** beside the slopes against `n_e`, with the same rules (finished cells with `n_e` >= 500, number of points, not-quiet marks), the summary gives the fitted slope against the number of dense table cells and the local slopes between consecutive cases ordered by table cells (`summary_local_slopes_cells.csv`). The table cells are rows × columns recorded by the guard. For a folder without the column count (the first series), they are estimated as the dense bytes of `environment.json` divided by 8, which counts all dense arrays of one run, not only the table; the summary and the figure name the source used.
+- **Figures:** `plot_timing.py` draws time against `n_e` (log-log, checks off, both methods and kinds), the same against the dense table cells (`timing_cells`), and the ratio old/port against `n_e`. A cell where the old method did not finish is drawn at the run's time-out with one marker per failure kind (time-out, iteration cap, error); that position is a limit, not a measured time. `run_timing.sh` calls it after `summarize.py`.
 
 ## Factorisation facts
 
@@ -237,7 +239,28 @@ of the machinery and is labelled "smoke, not for publication".
 
 - **Order of the two commands:** run `export_large.sh` well before the series, not right before it. The export runs Octave and leaves a high load average, which the first series (T14e) started under. The series now waits up to 300 s per cell for a quiet machine (`--quiet-wait`), but a cell whose wait expires is still timed and flagged `quiet` False.
 - **After the series:** check that every cell in `cells.csv` has `quiet` True. For a cell flagged False, `environment.json` names the three busiest processes at that moment.
-- **Expected stalls:** the old-method runs that stall (`old_stall_predictor.py`) run until the iteration cap or the time-out of 1800 s in the guard, and are recorded as "did not finish".
+- **Expected stalls:** the combinations that `old_stall_predictor.py` labels "predicted stall" get the stall probe in the guard (at most 120 s each), and are recorded as "did not finish".
+- **Expected duration** (from the settings, not from a measurement; `python -B benchmark/timing/duration_estimate.py`):
+
+  | quantity | value |
+  |---|---|
+  | combinations | 44 |
+  | port cells (checks off and on) | 88 |
+  | old-method cells expected to finish | 34 |
+  | of them large | 7 |
+  | large combinations predicted to stall (guard run: the probe) | 8 |
+  | large combinations with only a division-by-zero risk (guard run ends with the error) | 1 |
+  | timed cells | 122 |
+  | lower bound, timed cells x budget (s) | 3660 |
+  | added at most by the quiet wait, timed cells x 300 s (s) | 36600 |
+  | added at most by the probes, predicted stalls x 120 s (s) | 960 |
+  | before T14f: the same guard runs at most, predicted stalls x 1800 s (s) | 14400 |
+
+  The lower bound is the budget of every timed cell. On top of it come parts that depend on run times and are not
+  estimated here: the guard runs of the old method where it finishes, the cells that the slow-cell rule turns into 3
+  repetitions of a long run, warm-up runs, and the memory runs in separate processes. The quiet wait adds nothing on a
+  quiet machine and at most 300 s per cell on a busy one. The probe bounds the guard runs of the predicted stalls by
+  120 s each, against up to 1800 s each before T14f.
 
 ### Where the old method stalls: a static predictor
 
