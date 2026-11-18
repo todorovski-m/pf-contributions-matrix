@@ -252,6 +252,36 @@ def test_old_stall_predictor():
     br.loc[i, "QF"] = 0.0; br.loc[i, "QT"] = abs(br.loc[i, "QT"]) + 1.0
     r = P.predict(d9, "rpfc", br)
     assert r["orphan_buses"] >= 1 and r["label"] == "predicted stall"
+    assert P.predict(d9, "apfc")["division_by_zero_risk"] == 0
+    # a branch entering a bus with to-end flow exactly 0 is an outflow of value 0 there: a division-by-zero risk when
+    # the bus has inflow (branch 4-5 into bus 5, which is fed by branch 5-6)
+    br2 = d9["branch"].copy()
+    j = br2.index[((br2["F_BUS"] == 4) & (br2["T_BUS"] == 5)).to_numpy()][0]
+    br2.loc[j, "PT"] = 0.0
+    r2 = P.predict(d9, "apfc", br2)
+    assert r2["division_by_zero_risk"] == 1 and r2["risk_label"] == "division-by-zero risk"
+
+
+LARGE14 = [("case300", "apfc"), ("case300", "rpfc"), ("case_ACTIVSg500", "apfc"), ("case_ACTIVSg500", "rpfc"),
+           ("case1354pegase", "apfc"), ("case1354pegase", "rpfc"), ("case_ACTIVSg2000", "apfc"), ("case_ACTIVSg2000", "rpfc"),
+           ("case2383wp", "apfc"), ("case2383wp", "rpfc"), ("case2869pegase", "apfc"), ("case2869pegase", "rpfc"),
+           ("case3120sp", "rpfc"), ("case_ACTIVSg10k", "apfc")]
+# the four combinations where the old method raised ZeroDivisionError in the first series (and in T14c)
+OBSERVED_DIVISION_BY_ZERO = {("case1354pegase", "apfc"), ("case2383wp", "apfc"), ("case2383wp", "rpfc"), ("case2869pegase", "apfc")}
+
+
+@pytest.mark.skipif(not all(os.path.exists(os.path.join(C.MATRIX, "benchmark", "inputs_large", f"{c}.mat")) for c, _ in LARGE14),
+                    reason="needs the large exports of export_large.sh (git-ignored)")
+def test_division_by_zero_risk_on_the_large_combinations():
+    import old_stall_predictor as P
+    dirs = C.input_dirs()
+    risky = set()
+    for c in dict.fromkeys(c for c, _ in LARGE14):
+        data = C.load(c, dirs); br = C.correct_qsf(data)[0]
+        for cc, k in LARGE14:
+            if cc == c and P.predict(data, k, br)["division_by_zero_risk"] > 0:
+                risky.add((c, k))
+    assert risky == OBSERVED_DIVISION_BY_ZERO
 
 
 def test_port_runner_phases():
@@ -305,6 +335,10 @@ def test_combination_list():
     assert all(c in C.SMALL for c, k in C.COMBOS[:len(C.SMALL)]) and all(k == ("apfc", "rpfc") for _, k in C.COMBOS[:len(C.SMALL)])
     assert ("case3120sp", ("rpfc",)) in C.COMBOS and ("case_ACTIVSg10k", ("apfc",)) in C.COMBOS
     assert "case9241pegase" not in C.LARGE
+    # T14f: only case_ACTIVSg200 of the screened cases is added; the five APFC combinations with a division-by-zero
+    # risk and the dead ends with zero inflow are not
+    assert ("case_ACTIVSg200", ("apfc", "rpfc")) in C.LARGE_COMBOS
+    assert not {"case2736sp", "case2737sop", "case2746wop", "case2746wp", "case2848rte", "case6468rte"} & set(C.LARGE)
     assert C.parse_combos(C.combos_text(C.COMBOS)) == [(c, tuple(k)) for c, k in C.COMBOS]
 
 

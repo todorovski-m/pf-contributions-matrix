@@ -139,23 +139,74 @@ by 100.
 
 ### Case and kind list
 
-`cases.py` (`LARGE_COMBOS`) lists the (case, kind) combinations that the scan (`scan.py`) marks usable, in order of
-size. A combination is left out if either method's input guard rejects it or its dense result tables do not fit:
+`cases.py` (`LARGE_COMBOS`) lists the large (case, kind) combinations of the series, in order of size. Two rules made
+the list:
+- **The nine cases of T14c:** a combination is in when the port accepts it and its dense result tables fit (the scan,
+  `scan.py`). The old method's outcome did not matter there, so the list contains combinations where it stalls or
+  raises an error; for them the port is timed, and the old method is recorded as "did not finish".
+- **The 15 cases screened in T14f** (MATPOWER 7.1: case145, case_ACTIVSg200, case1888rte, case1951rte, case2736sp,
+  case2737sop, case2746wop, case2746wp, case2848rte, case3012wp, case3375wp, case6468rte, case6470rte, case6495rte,
+  case6515rte; case13659pegase was left out because of its dense tables). A combination is added only when:
+  - it is usable (the port accepts it);
+  - `old_stall_predictor.py` says "can finish" and finds no division-by-zero risk;
+  - its dense tables are within the memory limit (`--mem-fraction`, half of the physical memory).
 
-| case | APFC | RPFC | reason for an exclusion |
-|---|---|---|---|
-| case300 | yes | yes | |
-| case_ACTIVSg500 | yes | yes | |
-| case1354pegase | yes | yes | |
-| case_ACTIVSg2000 | yes | yes | |
-| case2383wp | yes | yes | |
-| case2869pegase | yes | yes | |
-| case3120sp | no | yes | APFC: `pfc:apfc:negativeLoss` (branches that deliver active power at both ends; the data have branches with negative series resistance) |
-| case_ACTIVSg10k | yes | no | RPFC: the estimated dense reactive tables are above the memory limit |
-| case9241pegase | no | no | APFC: `pfc:apfc:spectralRadius` (a circulating 2-cycle of gain 1 between two buses); RPFC: the estimated dense reactive tables are above the memory limit |
+  At most 8 were to be selected, spread over n_e; only `case_ACTIVSg200` (both kinds) qualifies.
 
-The scan itself, with the counts per case, is produced by `scan.py`; `cells.csv` of a series gives the reason for
-every cell that is not timed.
+Every screened case, with "in the series" (and the old method's expected outcome from the predictor) or the reason
+for the exclusion. The reasons are:
+- **spectral radius:** `pfc:*:spectralRadius`, a cycle with spectral radius of N at or above 1;
+- **negative loss:** `pfc:apfc:negativeLoss`;
+- **zero inflow:** `pfc:rpfc:zeroInflow`;
+- **memory:** the estimated dense tables are above the limit;
+- **stall:** the predictor says the old method stalls;
+- **division-by-zero risk:** the predictor finds a branch end of flow exactly 0 in an outflow set at a bus with
+  inflow, where the old method divides by that flow.
+
+| case | buses | n_e APFC | n_e RPFC | screened in | APFC | RPFC |
+|---|---|---|---|---|---|---|
+| case_ACTIVSg200 | 200 | 342 | 348 | T14f | in the series (old: can finish) | in the series (old: can finish) |
+| case300 | 300 | 602 | 627 | T14c | in the series (old: can finish) | in the series (old: predicted stall) |
+| case_ACTIVSg500 | 500 | 762 | 759 | T14c | in the series (old: can finish) | in the series (old: can finish) |
+| case1354pegase | 1354 | 2548 | 2889 | T14c | in the series (old: predicted stall, division-by-zero risk) | in the series (old: predicted stall) |
+| case1888rte | 1888 | 3429 | 3413 | T14f | excluded: stall, division-by-zero risk | excluded: stall |
+| case1951rte | 1951 | 3493 |  | T14f | excluded: stall, division-by-zero risk | excluded: spectral radius |
+| case_ACTIVSg2000 | 2000 | 4243 | 4486 | T14c | in the series (old: can finish) | in the series (old: can finish) |
+| case2383wp | 2383 | 4606 | 4704 | T14c | in the series (old: can finish, division-by-zero risk) | in the series (old: predicted stall, division-by-zero risk) |
+| case2737sop | 2737 | 5165 | 4954 | T14f | excluded: division-by-zero risk | excluded: stall |
+| case2848rte | 2848 | 5026 |  | T14f | excluded: division-by-zero risk | excluded: zero inflow |
+| case2746wp | 2746 | 5186 | 5102 | T14f | excluded: division-by-zero risk | excluded: stall |
+| case2736sp | 2736 | 5173 | 5109 | T14f | excluded: division-by-zero risk | excluded: stall |
+| case2746wop | 2746 | 5182 | 5159 | T14f | excluded: division-by-zero risk | excluded: stall |
+| case2869pegase | 2869 | 5840 | 6523 | T14c | in the series (old: predicted stall, division-by-zero risk) | in the series (old: predicted stall) |
+| case3120sp | 3120 |  | 5926 | T14c | excluded: negative loss | in the series (old: predicted stall) |
+| case3375wp | 3374 |  | 6563 | T14f | excluded: negative loss | excluded: stall |
+| case6468rte | 6468 | 11788 |  | T14f | excluded: stall, division-by-zero risk | excluded: zero inflow |
+| case6495rte | 6495 | 11873 |  | T14f | excluded: stall, division-by-zero risk | excluded: spectral radius |
+| case6515rte | 6515 | 11921 |  | T14f | excluded: stall, division-by-zero risk | excluded: spectral radius |
+| case6470rte | 6470 | 11922 |  | T14f | excluded: stall, division-by-zero risk | excluded: spectral radius |
+| case_ACTIVSg10k | 10000 | 16161 | 17621 | T14c | in the series (old: predicted stall) | excluded: memory |
+| case9241pegase | 9241 |  | 22329 | T14c | excluded: spectral radius | excluded: memory |
+| case145 | 145 |  |  | T14f | excluded: spectral radius | excluded: spectral radius |
+| case3012wp | 3012 |  |  | T14f | excluded: negative loss | excluded: spectral radius |
+
+Two groups are documented here and not handled:
+- **The five APFC combinations `case2736sp`, `case2737sop`, `case2746wop`, `case2746wp` and `case2848rte`.** They are
+  usable and predicted "can finish", but each has a division-by-zero risk (46 to 60 outflow entries of value 0 at
+  buses with inflow). On the first series, the same signature (in `case2383wp` APFC, also predicted "can finish") ended
+  in a `ZeroDivisionError` of the old method, so the guard could not compare them with the old method. The old method
+  is not changed (it is the pinned reference), and its error is not worked around.
+- **Limitation of the matrix method: zero inflow at a dead end with an inductive branch-end shunt** (`case2848rte` and
+  `case6468rte`, RPFC). A dead-end bus (no load, generation or shunt) whose only branch has a strongly inductive
+  from-end shunt flow gets a demand row `Tf_<bus>` (rule Q5, before the deletion of Q6), but no inflow, and the port
+  stops at `pfc:rpfc:zeroInflow`:
+  - in `case6468rte` the branch has the pattern (0,0) and is deleted;
+  - in `case2848rte` it has the pattern (0,+), and its zero terminal is omitted (T15b).
+
+  Where such a demand is supplied from would need a method rule; none is added.
+
+`scan.py` produces the scan itself, with the counts per case. `cells.csv` of a series gives the reason for every cell
+that is not timed.
 
 ### Slow cells
 
@@ -185,7 +236,8 @@ of the machinery and is labelled "smoke, not for publication".
 
 The old method is a sweep over the buses, not a numerical iteration (T14d): it processes a bus once, when every branch that flows into it is known, and never revisits it. `old_stall_predictor.py` builds the old method's initial inflow and outflow sets with its own preprocessing (`makeActiveFlows`, `makeReactiveFlows`) and the sign rules of its set construction. It then finds the buses that can never be processed: those in cyclic strongly connected components of the dependency digraph, those with an orphan inflow (a branch that flows into a bus but out of none, for example a reactive branch with zero exported from-end flow), and every bus downstream of these.
 - **Can say:** whether the old method can finish ("can finish") or stalls ("predicted stall"), and which buses stay unprocessed. It was validated against the observed runs of T14d (equal sets) and every combination of the first series, for both kinds.
-- **Cannot say:** whether the old method raises an exception inside a sweep (the division by zero of four large combinations), how many sweeps it needs, or how long a sweep takes. A time-out of a combination predicted "can finish" is a matter of size.
+- **Division-by-zero risk (T14f), reported next to the stall label,** because a combination can have both. It counts the outflow entries of value exactly 0 at buses with an inflow sum above 0: a branch that enters a bus with an end flow of exactly 0 lands in that bus's outflow set, and the old method divides by that flow (`power_components.py`, line 557 for APFC; lines 777 and 807 for RPFC, where the divisor is the flow plus the end-shunt flow). On the 14 large combinations of the first series the count is above 0 on exactly the four that raised `ZeroDivisionError`; a test checks this when the exports exist.
+- **Cannot say:** how many sweeps the old method needs, or how long a sweep takes. A time-out of a combination predicted "can finish" is a matter of size. When a combination has both a stall and a risk, it does not say which comes first.
 - **Usage:** `python -B benchmark/timing/old_stall_predictor.py --combos case2869pegase:rpfc,case_ACTIVSg10k:apfc [--observed <results>/iterations.csv]`. It does not run the old method.
 
 ### Correctness before timing

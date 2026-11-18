@@ -18,11 +18,14 @@ sys.path.insert(0, os.path.join(MATRIX, "python"))
 
 SMALL = ["case1", "case9", "case14", "case24_ieee_rts", "case30", "case33", "case118", "tap_loop",
          "syn9_neg_pd", "syn9_neg_pg", "syn9_neg_qd", "syn9_neg_qg", "syn9_case3_tap", "syn9_carrier_tap"]
-# The large (case, kinds) combinations that the scan of brief T14c (B1) marks usable, in order of size. Left out:
+# The large (case, kinds) combinations, in order of size. The nine cases of T14c (B1) are in by usability. Left out:
 #   case3120sp apfc (pfc:apfc:negativeLoss: six branches with negative series resistance in the data);
 #   case_ACTIVSg10k rpfc and case9241pegase rpfc (estimated dense reactive tables above the memory limit);
 #   case9241pegase apfc (pfc:apfc:spectralRadius: a circulating 2-cycle of gain 1 between buses 880 and 6671).
-LARGE_COMBOS = [("case300", ("apfc", "rpfc")), ("case_ACTIVSg500", ("apfc", "rpfc")), ("case1354pegase", ("apfc", "rpfc")),
+# Of the 15 cases screened in T14f, only combinations that are usable, predicted "can finish" by old_stall_predictor.py,
+# without a division-by-zero risk and within the memory limit are added: case_ACTIVSg200 (both kinds). The reasons for
+# every other screened combination are in the README (table of the screened cases).
+LARGE_COMBOS = [("case_ACTIVSg200", ("apfc", "rpfc")), ("case300", ("apfc", "rpfc")), ("case_ACTIVSg500", ("apfc", "rpfc")), ("case1354pegase", ("apfc", "rpfc")),
                 ("case_ACTIVSg2000", ("apfc", "rpfc")), ("case2383wp", ("apfc", "rpfc")), ("case2869pegase", ("apfc", "rpfc")),
                 ("case3120sp", ("rpfc",)), ("case_ACTIVSg10k", ("apfc",))]
 LARGE = [c for c, _ in LARGE_COMBOS]
