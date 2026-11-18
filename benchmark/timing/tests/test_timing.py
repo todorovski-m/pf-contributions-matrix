@@ -237,6 +237,23 @@ def test_summary_ratio_slow_cells_and_slopes(tmp_path):
         assert os.path.getsize(out) > 0
 
 
+def test_old_stall_predictor():
+    # tap_loop RPFC: one 2-cycle, both buses never processed (T14d); case9 and tap_loop APFC can finish
+    import old_stall_predictor as P
+    dirs = C.input_dirs()
+    tl = C.load("tap_loop", dirs)
+    r = P.predict(tl, "rpfc", C.correct_qsf(tl)[0])
+    assert r["label"] == "predicted stall" and r["predicted"] == 2 and r["cyclic_buses"] == 2 and r["orphan_buses"] == 0
+    assert P.predict(tl, "apfc")["label"] == "can finish"
+    d9 = C.load("case9", dirs)
+    assert P.predict(d9, "rpfc")["predicted"] == 0 and P.predict(d9, "apfc")["predicted"] == 0
+    # an orphan inflow: a branch with zero from-end flow and positive to-end flow is in no outflow set
+    br = d9["branch"].copy(); i = br.index[0]
+    br.loc[i, "QF"] = 0.0; br.loc[i, "QT"] = abs(br.loc[i, "QT"]) + 1.0
+    r = P.predict(d9, "rpfc", br)
+    assert r["orphan_buses"] >= 1 and r["label"] == "predicted stall"
+
+
 def test_port_runner_phases():
     data = C.load("case9", C.input_dirs())
     table, ph = T.port_runner(data, "rpfc", True)()
