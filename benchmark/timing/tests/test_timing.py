@@ -232,9 +232,15 @@ def test_summary_ratio_slow_cells_and_slopes(tmp_path):
     assert sp[("old", "", "apfc")]["points_ne_ge_500"] == 3 and sp[("old", "", "apfc")]["not_quiet_ne_ge_500"] == "c"
     # the global slope keeps its earlier rule (status exactly ok): the slow old cell is not in it
     assert sp[("old", "", "apfc")]["cases"] == "s a b"
+    # T14f: against the table size; the guard here has no row count, so the cells are dense bytes / 8 = n_e
+    assert r[("c", "port")]["table_cells"] == 2000 and r[("c", "port")]["table_cells_source"] == "dense bytes / 8"
+    assert abs(sp[("port", "off", "apfc")]["slope_cells_ne_ge_500"] - 2.0) < 1e-12 and sp[("port", "off", "apfc")]["points_cells_ne_ge_500"] == 3
+    import csv as _csv
+    lc = list(_csv.DictReader(open(f / "summary_local_slopes_cells.csv")))
+    assert len(lc) == 4 and all(abs(float(l["slope"]) - (2.0 if l["method"] == "port" else 3.0)) < 1e-12 for l in lc)
     import plot_timing as P
-    for out in P.plot(str(f)):
-        assert os.path.getsize(out) > 0
+    outs = P.plot(str(f))
+    assert len(outs) == 6 and all(os.path.getsize(o) > 0 for o in outs)
 
 
 def test_old_stall_predictor():
