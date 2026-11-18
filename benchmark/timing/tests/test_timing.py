@@ -106,6 +106,37 @@ def test_guard_flows_with_omitted_zero_terminals():
     assert np.abs(table.to_numpy().sum(axis=1) - flows).max() <= 1e-10
 
 
+def _mock_old(monkeypatch, done, max_cell, unmapped, rowsum):
+    """The old method and the comparison are mocked: the given finish flag, largest cell difference, unmapped port
+    rows and old row-sum deviation."""
+    import correctness
+    monkeypatch.setattr(T, "old_with_iterations", lambda *a, **k: (None, None, done, 10000 if not done else 7))
+    monkeypatch.setattr(correctness, "compare", lambda *a, **k: {
+        "unmapped_port_rows": unmapped, "max_cell": max_cell, "port_rowsum_vs_old_flow": rowsum,
+        "excluded_rows": 0, "unmapped_old_columns": [], "unmapped_port_columns": []})
+
+
+def test_guard_stalled_old_method_checks_the_port_only(monkeypatch):
+    # T14e: an unfinished old table (unmapped rows, row-sum deviation 267) is not compared; the port is checked
+    data = C.load("case9", C.input_dirs())
+    branch_old, _, _, _ = C.correct_qsf(data)
+    _mock_old(monkeypatch, done=False, max_cell=300.0, unmapped=["Tf_1", "Tt_2"], rowsum=267.0)
+    g = T.guard(data, "rpfc", 10000, 60, branch_old)
+    assert g["ok"] and g["old_status"] == "did not finish (iteration cap)" and g["iterations"] == 10000
+    assert g["guard_checks"] == "port only (old did not finish)"
+    assert "old_rowsum" not in g and "unmapped_matrix_rows" not in g
+    assert g["port_equal_public"] and g["port_rowsum"] <= 1e-10
+
+
+def test_guard_finished_old_method_with_a_cell_difference_fails(monkeypatch):
+    data = C.load("case9", C.input_dirs())
+    branch_old, _, _, _ = C.correct_qsf(data)
+    _mock_old(monkeypatch, done=True, max_cell=2e-10, unmapped=[], rowsum=1e-12)  # only the cell differs
+    g = T.guard(data, "rpfc", 10000, 60, branch_old)
+    assert not g["ok"] and g["old_status"] == "ok" and g["guard_checks"] == "port and old (old finished)"
+    assert g["max_cell"] == 2e-10
+
+
 def test_port_runner_phases():
     data = C.load("case9", C.input_dirs())
     table, ph = T.port_runner(data, "rpfc", True)()

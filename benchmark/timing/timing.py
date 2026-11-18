@@ -291,34 +291,40 @@ def compare_old_in_memory(table_old, fq, branch_raw, port_table, kind, done):
 
 def guard(data, kind, itermax, timeout_s, branch_old):
     """Before timing: the port (phase composition equal to the public function; row sums equal the flows within 1e-10)
-    and the old method in memory (with the corrected QSF; cells within 1e-10 if it finishes; row sums within 1e-10).
-    Returns a dict with 'ok', 'old_status', 'iterations' and the numbers."""
+    and the old method in memory (with the corrected QSF).
+    - The old method finishes: its table is compared with the port's (every mapped cell within 1e-10, every port row
+      mapped, the port row sums against the old flows within 1e-10), as before.
+    - The old method does not finish (iteration cap, time-out or error, T14e): only the port's own conditions are
+      checked and the old status is recorded; the old table, its row errors and the unmappable port rows are not
+      compared (an unfinished old table is not a reference).
+    Returns a dict with 'ok', 'old_status', 'iterations', 'guard_checks' and the numbers."""
     out = {"case": data["case"], "kind": kind}
     table, pub, flows, info = port_flows(data, kind)
-    out["n_e"] = info["n_e"]; out["nnz_N"] = info["nnz_N"]
+    out["n_e"] = info["n_e"]; out["nnz_N"] = info["nnz_N"]; out["rows"] = len(table)
     out["port_equal_public"] = bool(table.equals(pub))
     out["port_rowsum"] = float(np.abs(table.to_numpy().sum(axis=1) - flows).max()) if len(flows) else 0.0
+    cmpd = None
     try:
         import correctness           # the row mapping with the terminal classification (T15b, T14c)
         flows_old, t_old, done, iters = old_with_iterations(data, kind, itermax, branch_old, timeout_s)
         out["old_status"] = "ok" if done else "did not finish (iteration cap)"
         out["iterations"] = iters
-        c = correctness.compare(data, kind, t_old, flows_old, table)
-        cmpd = {"rows": len(table), "unmapped_matrix_rows": c["unmapped_port_rows"], "max_cell": c["max_cell"],
-                "old_rowsum": c["port_rowsum_vs_old_flow"], "excluded_rows": c["excluded_rows"],
-                "unmapped_old_columns": c["unmapped_old_columns"], "unmapped_matrix_columns": c["unmapped_port_columns"]}
-        out.update(cmpd)
+        if done:
+            c = correctness.compare(data, kind, t_old, flows_old, table)
+            cmpd = {"unmapped_matrix_rows": c["unmapped_port_rows"], "max_cell": c["max_cell"],
+                    "old_rowsum": c["port_rowsum_vs_old_flow"], "excluded_rows": c["excluded_rows"],
+                    "unmapped_old_columns": c["unmapped_old_columns"], "unmapped_matrix_columns": c["unmapped_port_columns"]}
+            out.update(cmpd)
     except RunTimeout:
         out["old_status"] = "did not finish (time-out)"; out["iterations"] = None
-        cmpd = None
     except Exception as e:          # the old method raises: the port is still timed, the old method is not
         out["old_status"] = f"did not finish (error: {error_text(e)})"; out["iterations"] = None
-        cmpd = None
     ok = out["port_equal_public"] and out["port_rowsum"] <= GUARD_TOL
     if cmpd is not None:
-        ok = ok and not cmpd["unmapped_matrix_rows"] and cmpd["old_rowsum"] <= GUARD_TOL
-        if out["old_status"] == "ok":
-            ok = ok and cmpd["max_cell"] <= GUARD_TOL
+        ok = ok and not cmpd["unmapped_matrix_rows"] and cmpd["old_rowsum"] <= GUARD_TOL and cmpd["max_cell"] <= GUARD_TOL
+        out["guard_checks"] = "port and old (old finished)"
+    else:
+        out["guard_checks"] = "port only (old did not finish)"
     out["ok"] = bool(ok)
     return out
 
