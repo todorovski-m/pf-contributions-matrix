@@ -95,7 +95,13 @@ Otherwise the case is flagged and not timed.
 - the power source and battery state (`pmset -g batt`), whether `caffeinate` is in use;
 - the 1-, 5- and 15-minute load averages before and after each case.
 
-A case is `quiet` if the 1-minute load average before it is below 0.25 times the number of cores. For a series meant for publication, use a machine on mains power with no other work running, and check that every case is quiet.
+**Quiet wait (T14e).** Before each cell, outside every timed region, the harness reads the one-minute load average every 10 s (`--quiet-poll`) and waits until it is below 0.25 times the number of logical cores, for at most 300 s (`--quiet-wait`).
+- **Recorded per cell** (`cells.csv`): the wait time, the load at the start of the wait and the load when the cell starts.
+- **When the wait expires:** the cell is still timed but flagged `quiet` False, and `environment.json` records the three processes with the highest CPU share at that moment (`ps`).
+- **Per case:** a case is `quiet` unless the wait of one of its cells expired.
+- **Why the threshold leaves room for the benchmark itself:** the benchmark runs in one thread, which by itself adds about 1 to the one-minute load average while it runs. On the 8 logical cores of the reference machine the threshold is 2.0, so the benchmark's own thread and the decay of its previous cell do not keep the machine from counting as quiet, while other work using more than about one core does.
+
+For a series meant for publication, use a machine on mains power with no other work running, and check that every cell is quiet.
 
 ## Large cases
 

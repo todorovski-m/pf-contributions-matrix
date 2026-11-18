@@ -360,6 +360,34 @@ def quiet_flag(load1_before, ncpu):
     return bool(load1_before < 0.25 * ncpu)
 
 
+QUIET_FRACTION = 0.25                       # threshold: one-minute load average below 0.25 x logical cores
+LOAD_FN = lambda: os.getloadavg()[0]        # noqa: E731  (hooks, replaced in the tests)
+SLEEP_FN = time.sleep
+CLOCK_FN = time.monotonic
+
+
+def top_processes(n=3):
+    """The n processes with the highest CPU share now (ps, sorted by CPU): list of 'pid %cpu command'."""
+    out = _cmd(["ps", "-Ao", "pid=,pcpu=,comm=", "-r"])
+    return [" ".join(l.split()) for l in out.splitlines()[:n]] if not out.startswith("unavailable") else [out]
+
+
+def wait_quiet(ncpu, max_wait_s=300.0, poll_s=10.0):
+    """Before a cell (outside every timed region): poll the one-minute load average every poll_s seconds until it is
+    below QUIET_FRACTION x ncpu, for at most max_wait_s seconds. Returns dict(load1_start, load1_end, wait_s, quiet,
+    top_processes): quiet is False only if the wait expired; then the three processes with the highest CPU share at
+    that moment are recorded."""
+    thr = QUIET_FRACTION * ncpu
+    t0 = CLOCK_FN()
+    l0 = l = float(LOAD_FN())
+    while l >= thr and CLOCK_FN() - t0 < max_wait_s:
+        SLEEP_FN(min(poll_s, max(0.0, max_wait_s - (CLOCK_FN() - t0))))
+        l = float(LOAD_FN())
+    quiet = bool(l < thr)
+    return {"load1_start": l0, "load1_end": l, "wait_s": CLOCK_FN() - t0, "quiet": quiet,
+            "threshold": thr, "top_processes": [] if quiet else top_processes(3)}
+
+
 def environment_record(smoke=False, args=None):
     import scipy, pandas, networkx
     ncpu = os.cpu_count()
@@ -483,6 +511,9 @@ def run_series(a):
                 cells.append({"case": c, "method": "old", "kind": kind, "checks": "", "status": g["old_status"] + " (guard run)", "n": 0})
             for method, checks in series:
                 fn = port_runner(data, kind, checks) if method == "port" else old_runner(data, kind, a.itermax, branch_old)
+                qw = wait_quiet(ncpu, a.quiet_wait, a.quiet_poll)          # outside every timed region
+                ch_ = "" if checks is None else ("on" if checks else "off")
+                rec.setdefault("cells", {})[f"{method}:{kind}:{ch_}"] = qw
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     r = measure_cell(fn, a.budget, a.min_rep, a.max_rep, a.warmup, a.timeout,
@@ -494,11 +525,16 @@ def run_series(a):
                         sw.writerow([env["label"], c, method, kind, ch, k, v, p_])
                 samples_f.flush()
                 cells.append({"case": c, "method": method, "kind": kind, "checks": ch, "status": r["status"],
-                              "n": len(r["samples"]), "warmup": r["warmup"], "slow": r["slow"]})
+                              "n": len(r["samples"]), "warmup": r["warmup"], "slow": r["slow"],
+                              "quiet": qw["quiet"], "wait_s": qw["wait_s"], "load1_start": qw["load1_start"],
+                              "load1_at_cell": qw["load1_end"]})
                 if a.memory and r["status"] == "ok":
                     m = memory_cell(a, c, method, kind, bool(checks))
                     mem.append({"case": c, "method": method, "kind": kind, "checks": ch, **m, "unit": env["ru_maxrss_unit"]})
         rec["load_after"] = load_record()
+        # T14e: a case is quiet unless the quiet wait of one of its cells expired (load_before stays as information)
+        if rec.get("cells"):
+            rec["quiet"] = all(v["quiet"] for v in rec["cells"].values())
         per_case[c] = rec
     samples_f.close()
     env["cases"] = per_case
@@ -530,6 +566,9 @@ def main(argv=None):
     r.add_argument("--budget", type=float, default=30.0); r.add_argument("--min-rep", type=int, default=5)
     r.add_argument("--max-rep", type=int, default=200); r.add_argument("--warmup", type=int, default=2)
     r.add_argument("--smoke", action="store_true"); r.add_argument("--no-memory", dest="memory", action="store_false")
+    r.add_argument("--quiet-wait", type=float, default=300.0,
+                   help="before each cell, wait at most this many seconds for the one-minute load average to fall below 0.25 x cores")
+    r.add_argument("--quiet-poll", type=float, default=10.0, help="polling interval of the quiet wait, seconds")
     r.add_argument("--mem-fraction", type=float, default=0.5,
                    help="skip a cell whose estimated dense tables exceed this fraction of the physical memory")
     m = sub.choices["memory"]

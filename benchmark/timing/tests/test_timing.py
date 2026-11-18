@@ -137,6 +137,57 @@ def test_guard_finished_old_method_with_a_cell_difference_fails(monkeypatch):
     assert g["max_cell"] == 2e-10
 
 
+class _FakeClock:
+    def __init__(self):
+        self.t = 0.0
+        self.slept = []
+
+    def now(self):
+        return self.t
+
+    def sleep(self, s):
+        self.slept.append(s); self.t += s
+
+
+def test_quiet_wait_waits_then_continues(monkeypatch):
+    clk = _FakeClock(); loads = iter([3.0, 2.5, 1.0])          # 8 cores: threshold 2.0
+    monkeypatch.setattr(T, "CLOCK_FN", clk.now); monkeypatch.setattr(T, "SLEEP_FN", clk.sleep)
+    monkeypatch.setattr(T, "LOAD_FN", lambda: next(loads))
+    q = T.wait_quiet(8, max_wait_s=300, poll_s=10)
+    assert q["quiet"] and q["wait_s"] == 20 and clk.slept == [10, 10]
+    assert q["load1_start"] == 3.0 and q["load1_end"] == 1.0 and q["top_processes"] == []
+
+
+def test_quiet_wait_expires_and_flags(monkeypatch):
+    clk = _FakeClock()
+    monkeypatch.setattr(T, "CLOCK_FN", clk.now); monkeypatch.setattr(T, "SLEEP_FN", clk.sleep)
+    monkeypatch.setattr(T, "LOAD_FN", lambda: 5.0)
+    monkeypatch.setattr(T, "top_processes", lambda n=3: ["1 99.0 a", "2 50.0 b", "3 10.0 c"])
+    q = T.wait_quiet(8, max_wait_s=30, poll_s=10)
+    assert not q["quiet"] and q["wait_s"] == 30 and sum(clk.slept) == 30
+    assert q["top_processes"] == ["1 99.0 a", "2 50.0 b", "3 10.0 c"]
+
+
+def test_quiet_wait_is_outside_the_samples(tmp_path, monkeypatch):
+    # a real wait of about 0.6 s before each cell (load high for three polls of 0.2 s), then a tiny series of case9
+    # APFC: every sample is far below the wait, the wait is recorded per cell, and every cell is quiet
+    calls = {"n": 0}
+
+    def load():
+        calls["n"] += 1
+        return 99.0 if calls["n"] % 4 != 0 else 0.0
+    monkeypatch.setattr(T, "LOAD_FN", load)
+    out = tmp_path / "res"
+    T.main(["run", "--out", str(out), "--combos", "case9:apfc", "--budget", "0.05", "--min-rep", "2", "--max-rep", "3",
+            "--warmup", "1", "--no-memory", "--smoke", "--quiet-wait", "5", "--quiet-poll", "0.2"])
+    import pandas as pd
+    cells = pd.read_csv(out / "cells.csv")
+    timed = cells[cells["n"] > 0]
+    assert len(timed) == 3 and (timed["wait_s"] >= 0.6).all() and timed["quiet"].all()
+    smp = pd.read_csv(out / "samples.csv")
+    assert (smp[smp["phase"].isna()]["ns"] < 0.3e9).all()
+
+
 def test_port_runner_phases():
     data = C.load("case9", C.input_dirs())
     table, ph = T.port_runner(data, "rpfc", True)()
