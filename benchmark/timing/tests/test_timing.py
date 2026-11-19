@@ -65,12 +65,17 @@ def test_quiet_flag_logic():
 
 
 def test_qsf_replacement():
+    # rule Q3 version 2.0 (T16): QSF and QST of the tapped branch 8-9 (tap 1.05, B = 0.306) become the line charging
     data = C.load("syn9_carrier_tap", [CARRIER])
     branch, rows, old, new = C.correct_qsf(data)
-    assert list(rows) == [7] and old[0] != new[0]
+    assert list(rows) == [7] and old[0][0] != new[0][0] and old[0][1] != new[0][1]
     other = [i for i in range(len(branch)) if i != 7]
-    assert np.array_equal(branch["QSF"].to_numpy()[other], data["branch"]["QSF"].to_numpy()[other])
-    assert branch["QSF"].iloc[7] == new[0] and data["branch"]["QSF"].iloc[7] == old[0]     # the input is not changed
+    for col in ("QSF", "QST"):
+        assert np.array_equal(branch[col].to_numpy()[other], data["branch"][col].to_numpy()[other])
+    assert [branch["QSF"].iloc[7], branch["QST"].iloc[7]] == new[0]
+    assert [data["branch"]["QSF"].iloc[7], data["branch"]["QST"].iloc[7]] == old[0]     # the input is not changed
+    vm = data["bus"].set_index("BUS_I")["VM"]
+    assert abs(new[0][0] - 0.306 / 2 * vm[8] ** 2 / 1.05 ** 2 * 100) < 1e-10 and abs(new[0][1] - 0.306 / 2 * vm[9] ** 2 * 100) < 1e-10
     d9 = C.load("case9", C.input_dirs())
     b9, rows9, _, _ = C.correct_qsf(d9)
     assert len(rows9) == 0 and b9.equals(d9["branch"])

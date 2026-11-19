@@ -99,7 +99,7 @@ Before a case is timed, both methods are run once in memory, with the row mappin
 
 A case that fails the guard is flagged and not timed. Before T14e, `case1354pegase` RPFC failed it on the unfinished old table: three port rows had no counterpart, and inductive branch-end shunt rows `Tf_<bus>` of buses with several such rows were paired by order of occurrence, which differs between the methods.
 
-**Known issue of the iterative pipeline:** `my_runpf.m` computes QSF with B/2 instead of B/(2·tap²). Before the guard and the timing, QSF is therefore replaced in the branches with tap ≠ 1 and BR_B ≠ 0 by the Qsf that `rpfc.m` computes (`branch_shunt_flows` of the port). This happens outside the timed region, and `environment.json` lists the cases and rows.
+**Input of the old method (rule Q3 version 2.0, T16):** `my_runpf.m` exports the branch-end shunt flows QSF and QST of the real-ratio pi-equivalent of a tap (with B/2 at the from-end), while `rpfc.m` and the port use the line charging of the branch model, QSF = (B/2)·VM_f²/tap²·baseMVA and QST = (B/2)·VM_t²·baseMVA. Before the guard and the timing, QSF and QST of every branch with a tap or a phase shift are therefore replaced by these values (`cases.correct_qsf`, through `tests/compare_old.formula_shunts`); the old method itself is not changed. This happens outside the timed region, and `environment.json` lists the cases, rows and [QSF, QST] pairs (`qsf_replaced`).
 
 **Cells not timed:** a cell whose dense result tables are estimated above half of the physical memory is skipped (`--mem-fraction`). So is a case that `load_results` cannot read, or whose input the port rejects. Each is recorded with its reason in `cells.csv`.
 

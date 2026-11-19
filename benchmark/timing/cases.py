@@ -3,8 +3,9 @@
 Both methods take the same in-memory DataFrames of load_results (external/iterative-method/power_flow.py) of an
 exported results.mat (my_runpf.m of the pinned submodule). Loading, the power flow and Octave are outside every
 timed region. The old method is imported by path; os.system is replaced by a raising function, so an attempt to call
-Octave fails instead of running. Before timing, the known issue of the old pipeline is corrected: in the branches with
-tap != 1 and BR_B != 0, the exported QSF is replaced by the Qsf that rpfc.m computes (branch_shunt_flows of the port).
+Octave fails instead of running. Before timing, the old method's input is aligned with rule Q3 version 2.0 (T16): in the
+branches with a tap or a phase shift, the exported QSF and QST (the real-ratio pi-equivalent of my_runpf.m) are replaced
+by the line charging that rpfc.m and the port use (correct_qsf).
 """
 import importlib.util
 import logging
@@ -112,25 +113,25 @@ def load(case, dirs):
     return {"case": case, "path": path, "bus": bus, "gen": gen, "branch": branch}
 
 
-def qsf_rows(branch, params):
-    """Rows of the branches with tap != 1 and BR_B != 0 (load_results has already set TAP = 0 to 1)."""
+def qsf_rows(data):
+    """Rows of the branches with |TAP| != 1 (TAP = 0 means 1) or SHIFT != 0, read from the branch matrix of the exported
+    .mat file: the branches whose exported QSF and QST (my_runpf.m: the real-ratio pi-equivalent of the tap, with B/2 at
+    the from-end) differ from the line charging of rule Q3 version 2.0."""
     import numpy as np
-    tap = branch["TAP"].to_numpy(float)
-    return np.where((tap != 1) & (params.frame["BR_B"].to_numpy(float) != 0))[0]
+    import scipy.io as sio
+    bm = np.asarray(sio.loadmat(data["path"])["branch"], float)
+    tap = np.abs(bm[:, 8]); tap[tap == 0] = 1.0
+    return np.where((tap != 1) | (bm[:, 9] != 0))[0]
 
 
 def correct_qsf(data):
-    """A copy of the branch DataFrame in which QSF is replaced, in the branches with tap != 1 and BR_B != 0 only, by
-    the Qsf that rpfc.m computes (pfc_matrix.reactive.branch_shunt_flows). Returns (branch, rows, old, new)."""
-    from pfc_matrix import Case, read_branch_params
-    from pfc_matrix.reactive import branch_shunt_flows
-    params = read_branch_params(data["path"])
-    rows = qsf_rows(data["branch"], params)
-    branch = data["branch"].copy()
-    if len(rows) == 0:
-        return branch, rows, [], []
-    case = Case.from_frames(data["bus"], data["gen"], data["branch"], data["case"], params=params)
-    qsf, _ = branch_shunt_flows(case)
-    old = branch["QSF"].to_numpy(float)[rows].tolist()
-    branch.loc[branch.index[rows], "QSF"] = qsf[rows]
-    return branch, rows, old, qsf[rows].tolist()
+    """A copy of the branch DataFrame in which QSF and QST of the tapped or phase-shifting branches are the line charging
+    of rule Q3 version 2.0 (T16), QSF = (B/2) VM_f^2/|TAP|^2 baseMVA and QST = (B/2) VM_t^2 baseMVA, which rpfc.m and the
+    port use (tests/compare_old.formula_shunts). Every other branch keeps its exported values (they equal the line
+    charging there). The old method is run unchanged on this input. Returns (branch, rows, old, new) with old and new
+    the [QSF, QST] pairs of the replaced rows."""
+    co = import_old()[2]
+    branch, rows = co.formula_shunts(data["branch"], data["bus"], data["path"])
+    old = data["branch"][["QSF", "QST"]].to_numpy(float)[rows].tolist()
+    new = branch[["QSF", "QST"]].to_numpy(float)[rows].tolist()
+    return branch, rows, old, new

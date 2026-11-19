@@ -40,16 +40,16 @@ zsh tests/export_synthetic.sh $WORK/syn_inputs > $WORK/export_synthetic.log 2>&1
 result "export of the synthetic inputs for the old method" $? "see $WORK/export_synthetic.log"
 zsh tests/run_matrix.sh $WORK/new > $WORK/run_matrix.log 2>&1
 result "apfc and rpfc on all cases under Octave" $? "see $WORK/run_matrix.log"
-# Cases compared with the old method: the default list of compare_old.py, given explicitly. The synthetic case
-# syn9_carrier_tap is not compared: the old pipeline computes the from-end shunt flow QSF of its tapped line with
-# B/2 instead of B/(2*tap^2) (my_runpf.m, known issue), so the old method disagrees with rpfc.m there.
+# Cases compared with the old method: the default list of compare_old.py, given explicitly. compare_old.py feeds the
+# old method the line charging of rule Q3 version 2.0 as QSF and QST of the tapped or phase-shifting branches
+# (formula_shunts, T16), so syn9_carrier_tap, which the version-1.0 shunt flows of my_runpf.m kept out, is compared.
 # The dead-end cases syn9_dead_* are not compared: compare_old.py compares both kinds of a case, and the old method
 # is not a reference for reactive dead ends (it does not finish or gives row errors, report T15a). Their active
 # part is compared with the old method by tests/dead_end_equivalence.py.
 # syn9_both_ends is not compared either: for its APFC branch 2-8 fed from both ends (pattern (+,-)) the old method
 # is not a reference (each of the branch's two rows is twice its flow, so its row errors equal the flow; every other
 # row agrees within 1e-10; report T14c).
-OLD_CASES=case1,case9,case14,case24_ieee_rts,case30,case33,case118,tap_loop,syn9_neg_pd,syn9_neg_pg,syn9_neg_qd,syn9_neg_qg,syn9_case3_tap
+OLD_CASES=case1,case9,case14,case24_ieee_rts,case30,case33,case118,tap_loop,syn9_neg_pd,syn9_neg_pg,syn9_neg_qd,syn9_neg_qg,syn9_case3_tap,syn9_carrier_tap
 python3 -B tests/compare_old.py $WORK/new benchmark/inputs $WORK/syn_inputs --cases $OLD_CASES > $WORK/compare_old.md 2>&1
 result "against the old method (cells and row sums within 1e-10)" $? "$(tail -1 $WORK/compare_old.md)"
 python3 -B tests/dead_end_equivalence.py $WORK/new benchmark/inputs $WORK/syn_inputs > $WORK/dead_end_equivalence.md 2>&1
