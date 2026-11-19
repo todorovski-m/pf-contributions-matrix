@@ -25,6 +25,16 @@ import numpy as np, pandas as pd
 
 TOL = 1e-10
 CASES = ["case1", "case9", "case14", "case30", "case33", "case118", "tap_loop"]
+
+
+def tapped(case):
+    """True if the exported input has a branch with TAP != 0 and != 1 or SHIFT != 0. The RPFC of such a case changed
+    with rule Q3 version 2.0 (T16: line charging only, instead of the real-ratio pi-equivalent of the tap of version 1.0,
+    which paper_results/ holds), so it is not compared with paper_results/."""
+    import scipy.io as sio
+    bm = np.asarray(sio.loadmat(os.path.join("benchmark", "inputs", f"{case}.mat"))["branch"], float)
+    tap = np.abs(bm[:, 8]); tap[tap == 0] = 1
+    return bool(((tap != 1) | (bm[:, 9] != 0)).any())
 g = lambda x: f"{x:.17g}"
 
 
@@ -89,8 +99,13 @@ def main():
     print("| case | file | rows compared | cells compared | max abs diff | cells above 1e-10 | of which expected | rows only in new | rows only in reference | columns only in new | columns only in reference | labels changed |")
     print("|---|---|---|---|---|---|---|---|---|---|---|---|")
     allrows = []; unexpected_total = 0
+    not_compared = []
     for c in CASES:
         for k in ["apfc", "rpfc"]:
+            if k == "rpfc" and tapped(c):
+                not_compared.append(c)
+                print(f"| {c} | {k} | not compared: rule Q3 version 2.0 (T16) changes the RPFC of cases with tapped branches | | | | | | | | | |")
+                continue
             new = pd.read_csv(os.path.join(a.newdir, f"{c}_{k}.csv"), float_precision="round_trip")
             ref = pd.read_csv(os.path.join("paper_results", f"{c}_{k}.csv"), float_precision="round_trip")
             if k == "rpfc": ref = relabel_case3(ref)
@@ -109,6 +124,8 @@ def main():
         found = {(r[2], r[4]) for r in allrows if r[0] == "case14" and r[1] == "rpfc"}
         print(f"\nT0 cells of case14 rpfc expected to differ: {len(expected14)}; found among the differences: {len(expected14 & found)}; "
               f"differences outside that set: {len(found - expected14)}")
+    if not_compared:
+        print(f"\nRPFC not compared with paper_results/ (cases with tapped branches, rule Q3 version 2.0, T16): {', '.join(not_compared)}")
     print(f"\nUnexpected differences (cells outside the expected set, unmatched rows, unexpected columns): {unexpected_total}")
     if a.diff_csv:
         pd.DataFrame(allrows, columns=["case", "file", "row", "occurrence", "column", "new", "paper_results", "absdiff", "expected"]).to_csv(a.diff_csv, index=False, float_format="%.17g")

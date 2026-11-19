@@ -4,6 +4,8 @@ function mpc = syn9_case3_tap
 %   susceptance B = 0.358 pu is unchanged. In the solved power flow, line 5-6 injects reactive
 %   power at both ends (Case 3) and its tap-model shunt at the to-end is inductive. Everything
 %   else as in case9. Tests the rule that a Case-3 branch keeps its inductive shunt demand.
+%   Since rule Q3 version 2.0 (T16) the shunt flows are the line charging only, so this branch has no
+%   inductive shunt; that rule is tested on crafted inputs (python/tests/test_rpfc.py).
 %
 %   Original header of case9:
 %CASE9    Power flow data for 9 bus, 3 generator case.

@@ -44,9 +44,11 @@ for k = 1:numel(cases)
             d.nnz_N, d.nnz_A, d.issparse.N, d.issparse.A, d.issparse.B, d.condest_A, d.attenuation_range(1), ...
             d.attenuation_range(2), d.acyclic, d.spectral_radius, strjoin(d.warnings, ', '), nsf);
         if strcmp(c, 'tap_loop') && strcmp(fnc{1}, 'rpfc')
-            ok = abs(d.spectral_radius - 0.17937561102916488) <= 1e-12 && ~d.acyclic && ...
-                 isequal(d.negative_series_flow.branches, {'1 (2-1)'});
-            tap_line = sprintf('diag: tap_loop rpfc rho = %.17g, acyclic = 0, negative series flow in transformer A (branch 1, 2-1)', d.spectral_radius);
+            % rule Q3 version 2.0 (T16): the transformers have no line charging, so their shunt flows are 0, the series
+            % flows are the terminal flows, both attenuations are positive and no branch has a negative series flow
+            ok = abs(d.spectral_radius - 0.70272805899981738) <= 1e-12 && ~d.acyclic && ...
+                 d.negative_series_flow.count == 0;
+            tap_line = sprintf('diag: tap_loop rpfc rho = %.17g, acyclic = 0, no negative series flow (rule Q3 v2.0)', d.spectral_radius);
             tap_ok = ok;
         elseif any(strcmp(c, {'case1', 'case9', 'case14', 'case24_ieee_rts', 'case30', 'case33', 'case118'}))
             pfc_report(sprintf('diag: %s %s acyclic with spectral radius 0', c, fnc{1}), d.acyclic && d.spectral_radius == 0, ...

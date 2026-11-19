@@ -69,7 +69,20 @@ for c in $(cd $WORK/new && ls *_apfc.csv | sed 's/_apfc.csv$//'); do
 done
 ( cd $WORK/t12a && zsh tests/run_matrix.sh $WORK/t12a_out $CASES ) > $WORK/t12a_run.log 2>&1
 result "regenerate the T12a end state ($T12A_REF)" $? "see $WORK/t12a_run.log"
-python3 -B tests/compare_runs.py $WORK/new $WORK/t12a_out --tol 1e-12 > $WORK/compare_runs.md 2>&1
+# the RPFC of the cases with tapped or phase-shifting branches changed with rule Q3 version 2.0 (T16); the T12a code
+# has version 1.0 of the rule, so these rpfc files are not compared
+TAPPED=$(python3 -B -c "
+import sys, os, numpy as np, scipy.io as sio
+out = []
+for c in sys.argv[2:]:
+    for d in ('benchmark/inputs', sys.argv[1]):
+        p = os.path.join(d, c + '.mat')
+        if os.path.exists(p):
+            bm = np.asarray(sio.loadmat(p)['branch'], float); t = np.abs(bm[:, 8]); t[t == 0] = 1
+            if ((t != 1) | (bm[:, 9] != 0)).any(): out.append(c)
+            break
+print(','.join(out))" $WORK/syn_inputs $CASES)
+python3 -B tests/compare_runs.py $WORK/new $WORK/t12a_out --tol 1e-12 --skip-rpfc "$TAPPED" > $WORK/compare_runs.md 2>&1
 result "against the T12a end state (values within 1e-12, labels unchanged except suffixes)" $? "$(tail -1 $WORK/compare_runs.md)"
 
 # 4. reference_results/ are reproduced byte for byte by tests/make_reference.sh

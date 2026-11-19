@@ -10,7 +10,8 @@ Usage (from the root of the matrix repository):
 For each case, the input <case>.mat is taken from the first inputs dir that contains it
 (benchmark/inputs for the shared cases and tap_loop; the export of tests/export_synthetic.sh for
 the synthetic cases). The old method's makeAPFC and makeRPFC are imported by path from the pinned
-submodule external/iterative-method and run on load_results(<case>.mat) with itermax = 10000 and
+submodule external/iterative-method and run on load_results(<case>.mat), with QSF and QST of the tapped or
+phase-shifting branches replaced by the line charging of rule Q3 version 2.0 (formula_shunts), with itermax = 10000 and
 logging at INFO without a file handler. Their in-memory tables are compared, not the saved CSV files
 (cleanRows() in the old code drops the rows of identical parallel branches).
 
@@ -65,12 +66,37 @@ class Collect(logging.Handler):
     def emit(self, r): self.lines.append(r.getMessage())
 
 
+def formula_shunts(branch, bus, mat):
+    """A copy of the branch DataFrame of load_results in which QSF and QST are the line charging of the branch model
+    of rule Q3 version 2.0 (ideal transformer with ratio tau = TAP e^(j SHIFT), then the pi circuit):
+    QSF = (B/2) VM_f^2 / |TAP|^2 baseMVA and QST = (B/2) VM_t^2 baseMVA, on every branch with TAP != 0 and != 1 or
+    SHIFT != 0. my_runpf.m exports the shunt flows of the real-ratio pi-equivalent of the tap instead (with B/2 at the
+    from-end), which equal the line charging only on branches without a tap; the old method is run unchanged on the
+    corrected input, so that both methods split the transformers alike. Returns (branch, rows replaced)."""
+    import numpy as np
+    import scipy.io as sio
+    m = sio.loadmat(mat)
+    bm = np.asarray(m["branch"], float); base = float(np.asarray(m["baseMVA"]).ravel()[0])
+    assert len(bm) == len(branch)
+    tap = np.abs(bm[:, 8]); tap[tap == 0] = 1.0
+    rows = np.where((tap != 1) | (bm[:, 9] != 0))[0]
+    out = branch.copy()
+    if len(rows):
+        vm = dict(zip(bus["BUS_I"].astype(int), bus["VM"].astype(float)))
+        vf = np.array([vm[int(b)] for b in branch["F_BUS"]]); vt = np.array([vm[int(b)] for b in branch["T_BUS"]])
+        half_b = bm[:, 4] / 2
+        out.loc[out.index[rows], "QSF"] = (vf ** 2 * half_b / tap ** 2 * base)[rows]
+        out.loc[out.index[rows], "QST"] = (vt ** 2 * half_b * base)[rows]
+    return out, rows
+
+
 def run_old(pf, pc, mat):
     root = logging.getLogger(); root.setLevel(logging.NOTSET)
     for h in list(root.handlers): root.removeHandler(h)
     root.addHandler(logging.NullHandler())
     h = Collect(); root.addHandler(h)
     bus, gen, branch, xy = pf.load_results(mat)
+    branch, _ = formula_shunts(branch, bus, mat)       # rule Q3 version 2.0 (T16)
     fp, A = pc.makeAPFC(bus, gen, branch, None, ITERMAX, False)
     fq, R = pc.makeRPFC(bus, gen, branch, None, ITERMAX, False)
     root.removeHandler(h)

@@ -303,7 +303,8 @@ def test_diag_case(name):
             assert "pfc:rpfc:negativeSeriesFlow" not in info["warnings"]
 
 
-def test_tap_loop_cyclic_reactive_digraph():                     # 'diag: tap_loop rpfc rho = 0.17937561102916488, ...'
+def test_tap_loop_cyclic_reactive_digraph():                     # 'diag: tap_loop rpfc rho = 0.70272805899981738, ...'
+    # rule Q3 version 2.0 (T16): no line charging, so zero shunt flows, positive attenuations, no negative series flow
     _, info = no_warning(rpfc, _case("tap_loop"))
-    assert abs(info["spectral_radius"] - 0.17937561102916488) <= 1e-12
-    assert not info["acyclic"] and info["negative_series_flow"]["branches"] == ["1 (2-1)"]
+    assert abs(info["spectral_radius"] - 0.70272805899981738) <= 1e-12
+    assert not info["acyclic"] and info["negative_series_flow"] == {"count": 0, "branches": []}

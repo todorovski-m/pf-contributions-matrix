@@ -23,8 +23,12 @@ def suffix_only(new, ref):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("new"); ap.add_argument("ref"); ap.add_argument("--tol", type=float, default=1e-12)
+    ap.add_argument("--skip-rpfc", default="", help="comma-separated cases whose rpfc file is not compared (for example "
+                    "the cases with tapped or phase-shifting branches, whose RPFC rule Q3 version 2.0 changed, T16)")
     a = ap.parse_args()
-    files = sorted(f for f in os.listdir(a.ref) if f.endswith(("_apfc.csv", "_rpfc.csv")) and os.path.exists(os.path.join(a.new, f)))
+    skip = {f"{c}_rpfc.csv" for c in a.skip_rpfc.split(",") if c}
+    files = sorted(f for f in os.listdir(a.ref) if f.endswith(("_apfc.csv", "_rpfc.csv")) and os.path.exists(os.path.join(a.new, f))
+                   and f not in skip)
     only_ref = sorted(f for f in os.listdir(a.ref) if f.endswith(".csv") and not os.path.exists(os.path.join(a.new, f)))
     print(f"| file | same shape | max abs diff | values within {a.tol:g} | row labels changed (suffix only / other) | column names changed (suffix only / other) |")
     print("|---|---|---|---|---|---|")
@@ -49,6 +53,8 @@ def main():
         print("\nLabel changes (file, kind, reference label -> new label):\n")
         for c in changes:
             print(f"- {c[0]}, {c[1]}: `{c[2]}` -> `{c[3]}`")
+    if skip:
+        print(f"\nNot compared (rpfc of the cases with tapped or phase-shifting branches; rule Q3 version 2.0, T16): {sorted(skip)}")
     print(f"\nFiles compared: {len(files)}; failed (values above tolerance, shape change, or non-suffix label change): {fails}")
     return 0 if fails == 0 else 1
 

@@ -210,21 +210,25 @@ def test_repeated_labels_case24_case14_case118():
     # six absorbing generators at bus 22 are demand rows; five injecting generators at bus 15 are columns
     assert [r for r in t24.index if r.startswith("G_22")] == ["G_22", "G_22_2", "G_22_3", "G_22_4", "G_22_5", "G_22_6"]
     assert [c for c in t24.columns if c.startswith("G_15")] == ["G_15", "G_15_2", "G_15_3", "G_15_4", "G_15_5"]
-    assert {"C2_3", "C2_24", "Tt_11", "Tt_11_2"} <= set(t24.index)
+    assert {"C2_3", "C2_24"} <= set(t24.index)
     t14, _ = rpfc(real_case(os.path.join(MATRIX_DIR, "benchmark", "inputs", "case14.mat"), "case14"))
-    assert {"Tf_4", "Tf_4_2"} <= set(t14.index)
+    # rule Q3 version 2.0 (T16): the tapped transformers of case24_ieee_rts and case14 have no line charging, so they
+    # have no transformer-shunt rows (version 1.0 had Tt_11, Tt_11_2 and Tf_4, Tf_4_2 here)
+    assert not any(r.startswith(("Tf_", "Tt_")) for t in (t24, t14) for r in t.index)
     t118, _ = rpfc(real_case(os.path.join(MATRIX_DIR, "benchmark", "inputs", "case118.mat"), "case118"))
     assert {"C2_49", "C2_49_2", "C2_49_3", "C2_49_4"} <= set(t118.index)
     for t in (t24, t14, t118):
         assert t.index.is_unique and t.columns.is_unique
 
 
-def test_tap_loop_negative_attenuation_and_cyclic_digraph():
+def test_tap_loop_positive_attenuation_and_cyclic_digraph():
+    # rule Q3 version 2.0 (T16): no line charging, so both attenuations are the terminal-flow ratios, positive
+    # (version 1.0 had a negative attenuation in transformer A from the tap-dependent shunt flows)
     case = real_case(os.path.join(MATRIX_DIR, "benchmark", "inputs", "tap_loop.mat"), "tap_loop")
     table, info = rpfc(case)
-    assert info["negative_series_flow"] == {"count": 1, "branches": ["1 (2-1)"]}
+    assert info["negative_series_flow"] == {"count": 0, "branches": []} and not info["acyclic"]
     system = assemble_reactive(prepare_reactive(case))
-    assert (system.aQ[:prepare_reactive(case).nl] < 0).any()
+    assert (system.aQ[:prepare_reactive(case).nl] > 0).all()
     assert np.isfinite(table.to_numpy()).all()
     check_row_sums(case, table)
 
@@ -249,11 +253,15 @@ def _syn(name):
 
 
 def test_syn9_case3_tap_case3_branch_with_inductive_shunt():
+    # rule Q3 version 2.0 (T16): the shunt flows of line 5-6 (tap 1.05, B = 0.358 pu) are its line charging, both
+    # capacitive, so the Case-3 branch has no inductive shunt demand any more (version 1.0 derived an inductive to-end
+    # shunt from the tap). The rule "a Case-3 branch keeps its inductive shunt demand" is tested on crafted inputs
+    # (test_case3_branch_with_inductive_shunt_keeps_its_row).
     case = _syn("syn9_case3_tap")
     table, info = rpfc(case)
     assert info["converted"]["case3_branches_to_sources"] >= 1
-    assert info["converted"]["inductive_from_end_shunt_to_demand"] + info["converted"]["inductive_to_end_shunt_to_demand"] >= 1
-    assert any(r.startswith(("Tf_", "Tt_")) for r in table.index)
+    assert info["converted"]["inductive_from_end_shunt_to_demand"] + info["converted"]["inductive_to_end_shunt_to_demand"] == 0
+    assert not any(r.startswith(("Tf_", "Tt_")) for r in table.index)
     check_row_sums(case, table)
     octave = os.environ.get("PFC_OCTAVE_OUT")
     if octave and os.path.exists(os.path.join(octave, "syn9_case3_tap_rpfc.csv")):
