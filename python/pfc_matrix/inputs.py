@@ -8,10 +8,12 @@ The exported inputs have already been preprocessed by ``my_runpf.m`` of the iter
 - PS, QS (bus shunts) and QSF, QST (branch shunt flows) are computed.
 The package itself does not import the iterative method.
 
-The reactive port (RPFC) computes the branch shunt flows as rpfc.m does, from BR_R, BR_X, TAP, VM, VA and
-baseMVA. ``load_results`` drops BR_R, BR_X, BR_B and baseMVA; ``read_branch_params`` reads them from the same
-exported ``.mat`` file, and ``Case.from_frames(..., params=...)`` receives them. The exported QSF and QST are not
-used: QSF of ``my_runpf.m`` has the from-end line charging as B/2 instead of B/(2 tap^2).
+The reactive port (RPFC) computes the branch shunt flows as rpfc.m does (rule Q3, version 2.0): the line charging
+of the branch model, Qsf = (B/2) VM_f^2 / tap^2 baseMVA and Qst = (B/2) VM_t^2 baseMVA with tap = |TAP|, from BR_B,
+TAP, VM and baseMVA. SHIFT is not used (an ideal phase shifter is lossless, so only |tau| enters). ``load_results``
+drops BR_R, BR_X, BR_B and baseMVA; ``read_branch_params`` reads them from the same exported ``.mat`` file, and
+``Case.from_frames(..., params=...)`` receives them. The exported QSF and QST are not used: ``my_runpf.m`` writes the
+shunt flows of the real-ratio pi-equivalent of a tap there.
 """
 from dataclasses import dataclass
 from typing import Optional
