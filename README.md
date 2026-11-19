@@ -12,7 +12,8 @@ This package provides matrix-based algorithms for decomposing active and reactiv
 - **RPFC (Reactive Power Flow Components)**: Allocates reactive power flows to generators and reactive sources
 - **Matrix Formulation**: All source contributions follow from one linear system, solved with a single factorization for all right-hand sides
 - **Branch-Level Resolution**: Separates from-end and to-end contributions for every branch
-- **Shunt Handling**: Attributes line-charging capacitances, transformer tap-model shunts and bus-mounted capacitor banks
+- **Shunt Handling**: Attributes line charging and bus-mounted capacitor banks
+- **Transformer Model**: An ideal transformer with complex ratio followed by the pi circuit; off-nominal taps and phase shifters need no extra rule (see "Branch Model")
 - **Circulating Flow Support**: Reactive circulating flows lead to a cyclic flow digraph; the system is solved as long as the spectral radius of the propagation matrix is below 1, which is checked
 - **Validity Checks and Diagnostics**: Acyclicity, spectral radius, attenuation range and inflow guards, with a diagnostics output (`diag`)
 
@@ -61,7 +62,7 @@ This package provides matrix-based algorithms for decomposing active and reactiv
 - **`rpfc.m`**: RPFC computation
   - Input and output as for `apfc.m`
   - Classifies branches into three reactive cases based on the signs of the terminal flows
-  - Computes series and shunt flow components and the shunt self-contributions
+  - Computes series and shunt flow components (the shunt flows are the line charging of the branch model) and the shunt self-contributions
   - Handles reactive circulating flows; the spectral radius of the propagation matrix is checked
 
 - **`pfc_checks.m`**: options and validity checks used by both functions (see "Validity Checks")
@@ -81,7 +82,7 @@ Standard MATPOWER test networks:
 - **`case118.m`**: IEEE 118-bus system
 - **`tap_loop.m`**: Parallel transformers with a reactive circulating flow
 
-Synthetic variants of case9 are in `tests/cases_synthetic/`: negative active and reactive demand and generation, and a Case-3 branch with an inductive shunt (`syn9_case3_tap`).
+Synthetic variants of case9 are in `tests/cases_synthetic/`: negative active and reactive demand and generation, a tapped Case-3 branch (`syn9_case3_tap`) and a tapped carrier (`syn9_carrier_tap`). Phase-shifter variants of case9 (`syn9_pst`, `syn9_pst_tap`, and `syn9_pst_carrier`, `syn9_pst_carrier_tap`, in which the shifted branch is a reactive carrier) are in `benchmark/reconstruction/cases/`, with their exports and Octave outputs in `python/tests/cases/`.
 
 ### Results
 
@@ -173,8 +174,16 @@ Both functions return tables with:
 | Negative generation | a generator with PG < -`tol` is a demand (row `G_b`) | a generator with QG < -`tol` is a demand (row `G_b`) |
 | Reactive branch cases (after orientation) | - | Case 1, both terminal flows positive: a carrier. Case 2, from-end positive and to-end negative (consumes at both ends): replaced by two demands (rows `C2_b` at both buses). Case 3, from-end negative and to-end positive (injects at both ends): removed from the carriers, its two terminal injections are sources (columns `E_i_j_f`, `E_i_j_t`). The tests use the signs at exactly 0. |
 | Bus shunts | - | Q = VM² · BS: a source (column `S_b`) if above `tol`, a demand (row `Bs_b`) if below -`tol` |
-| Branch shunts | - | The shunt flows at both ends follow from the series current. An inductive shunt (below -`tol`) is a demand (row `Tf_b` or `Tt_b`), except on a Case-2 branch, whose two terminal demands already contain its shunt power. Capacitive branch shunts give the self-contribution columns `E_i_j_s`. |
+| Branch shunts | - | The shunt flows are the line charging of the branch model (see "Branch Model"): Qsf = (B/2)·VM_f²/tap²·baseMVA at the from-end and Qst = (B/2)·VM_t²·baseMVA at the to-end, with tap = \|TAP\| (TAP = 0 means 1). An inductive shunt (below -`tol`, from a negative B) is a demand (row `Tf_b` or `Tt_b`), except on a Case-2 branch, whose two terminal demands already contain its shunt power. Capacitive branch shunts give the self-contribution columns `E_i_j_s`. |
 | Attenuation | a = Pt / Pf | a = Qe / Qs, from the series flows (shunts removed) |
+
+### Branch Model
+
+Every branch is an ideal transformer with complex ratio τ = tap·e^(j·shift) at the from-end, followed by the pi circuit: the series admittance ys = 1/(R + jX) and the line charging B/2 at each end of the circuit. This is the model of MATPOWER's power flow (its branch stamp Yff = (ys + jB/2)/|τ|², Yft = -ys/conj(τ), Ytf = -ys/τ, Ytt = ys + jB/2).
+- **The ideal transformer is lossless and conserves complex power.** The from-end terminal flow therefore equals the flow into the pi circuit at the internal node, whose voltage magnitude is VM_f/tap.
+- **The shunt flows are the line charging only:** Qsf = (B/2)·VM_f²/tap²·baseMVA and Qst = (B/2)·VM_t²·baseMVA (rule Q3). The series flows are Qs = Qf + Qsf and Qe = Qt - Qst, the flows of the series element.
+- **Only |τ| enters.** The phase shift is not used, so phase-shifting transformers need no extra rule; a transformer without line charging has no shunt flows.
+- **Version 1.0 was different:** it split an off-nominal tap as the real-ratio pi-equivalent (series admittance ys/tap). That gave tap-dependent shunt flows, capacitive or inductive, also for transformers without line charging, and it ignored the phase shift. Version 2.0 changes the RPFC results of every case with a tapped branch (see `RELEASE_NOTES_v2.0.md`).
 
 ### Terminal Classification
 
@@ -243,18 +252,18 @@ Not checked: a spectral radius close to (but below) 1, and a near-singular A. `d
 
 ## Negative Reactive Attenuation in Standard Cases
 
-Some branches carry positive reactive flow at both terminals, but the series element absorbs reactive power from both ends, so the series flow at the to-end is negative and the reactive attenuation Qe / Qs is negative. This occurs mainly on transformers with an off-nominal tap. Negative attenuation does not invalidate the results; the contributions agree with the earlier iterative method. But some contributions become negative. Generated by `python3 -B tests/negative_attenuation_table.py <rpfc outputs> benchmark/inputs`:
+Some branches carry positive reactive flow at both terminals, but the series element absorbs reactive power from both ends, so the series flow at the to-end is negative and the reactive attenuation Qe / Qs is negative. With the branch model of version 2.0 it occurs on lines only; in version 1.0, whose split of an off-nominal tap gave transformers tap-dependent shunt flows, most of these branches were tapped transformers. Negative attenuation does not invalidate the results; the contributions agree with the earlier iterative method. But some contributions become negative. Generated by `python3 -B tests/negative_attenuation_table.py <rpfc outputs> benchmark/inputs`:
 
 | case | carrier branches with negative attenuation | of which transformers | most negative attenuation | negative contribution cells | smallest negative contribution (Mvar) |
 |---|---|---|---|---|---|
 | case1 | 0 | 0 | - | 0 | - |
 | case9 | 0 | 0 | - | 0 | - |
-| case14 | 2 | 1 | -2.012 | 249 | -5.792 |
-| case24_ieee_rts | 4 | 2 | -0.918 | 77 | -4.466 |
+| case14 | 1 | 0 | -0.064 | 45 | -0.100 |
+| case24_ieee_rts | 2 | 0 | -0.181 | 41 | -1.839 |
 | case30 | 0 | 0 | - | 0 | - |
 | case33 | 0 | 0 | - | 0 | - |
-| case118 | 12 | 8 | -4.708 | 1084 | -130.175 |
-| tap_loop | 1 | 1 | -0.327 | 4 | -1.658 |
+| case118 | 4 | 0 | -0.297 | 51 | -0.388 |
+| tap_loop | 0 | 0 | - | 0 | - |
 
 "Negative contribution cells" excludes the own terminal injection of a Case-3 branch in its own row, which is negative by design. The branches are listed in `diag.negative_series_flow`.
 
@@ -341,7 +350,7 @@ RPFC result (Mvar):
 
 ### Case 30 (IEEE 30-Bus)
 
-- Tests transformers with tap-ratio attribution
+- Transformer branches with ratio 1 (the MATPOWER data `case30` have no off-nominal tap)
 - Validates capacitor bank contributions
 - Verifies from-end to-end reactive losses
 
@@ -354,14 +363,14 @@ RPFC result (Mvar):
 ### Case 24 (IEEE RTS 24-Bus)
 
 - Several generators at one bus (unique column names `G_b`, `G_b_2`, ...)
-- Case-2 transformers with an inductive shunt (no `Tf`/`Tt` demand for them, see "Preprocessing Rules")
+- Case-2 branches, replaced by their terminal demands (rows `C2_b`); its five tapped transformers have no line charging, so no shunt flows
 
 ### Tap Loop (Circulating Flows)
 
 - Parallel transformers with a tap mismatch (taps 1.05 and 0.95)
-- The reactive flow digraph is cyclic: `diag.acyclic` is false and `diag.spectral_radius` is 0.17937561102916488 (below 1, so A is invertible by the Neumann series)
+- The reactive flow digraph is cyclic: `diag.acyclic` is false and `diag.spectral_radius` is 0.70272805899981738 (below 1, so A is invertible by the Neumann series)
 - The earlier iterative method cannot resolve this case: each of the two buses waits for a contribution that only the other bus can provide, so no bus is ever processed
-- Transformer A has a negative series flow at its to-end (`diag.negative_series_flow`)
+- The transformers have no line charging, so their shunt flows are zero, the attenuations are the terminal-flow ratios (both positive), and every row is attributed to the generator `G_1`
 
 ## Tests and Validation
 
@@ -376,10 +385,10 @@ zsh tests/make_reference.sh       # regenerate reference_results/
 - the unit tests in `tests/unit/` (options and input forms, the checks with crafted inputs, the diagnostics of all test cases, and the terminal classification: the nine sign patterns, the dead-end cases at the from side and at the to side, invariance to a perturbation of the zero terminal, the equivalence of a dead-end branch with the terminal injection it represents, and the branches fed from both ends with their equivalence with two loads);
 - the comparison of the active dead ends with the earlier iterative method (`tests/dead_end_equivalence.py`);
 - the comparison with the earlier iterative method on in-memory results (cells and row sums within 1e-10);
-- the comparison with `paper_results/`, where only the documented differences of version 2.0 are allowed;
+- the comparison with `paper_results/`, where only the documented differences of version 2.0 are allowed (the RPFC of the cases with a tapped branch, which rule Q3 changes, is not compared);
 - the regeneration of `reference_results/`, which must match the committed files byte for byte.
 
-The synthetic case `tests/cases_synthetic/syn9_carrier_tap.m` (case9 with tap 1.05 on line 8-9, which stays a reactive carrier with an off-nominal tap and line charging) is run by `apfc.m` and `rpfc.m` and by the Python port, but it is not compared with the earlier iterative method: that method's preprocessing (`my_runpf.m`) computes the from-end shunt flow of such a line with B/2 instead of B/(2·tap²), so it disagrees there (see "Python Port"). The case list of that comparison is given explicitly in `tests/run_tests.sh`.
+The synthetic case `tests/cases_synthetic/syn9_carrier_tap.m` (case9 with tap 1.05 on line 8-9, which stays a reactive carrier with an off-nominal tap and line charging) is compared with the earlier iterative method like the other cases. The earlier method's preprocessing (`my_runpf.m`) exports the shunt flows of the real-ratio pi-equivalent of a tap; the comparison (`tests/compare_old.py`, `formula_shunts`) and the timing harness feed it the line charging of rule Q3 instead, on every branch with a tap or a phase shift. The method itself is not changed.
 
 The synthetic case `tests/cases_synthetic/syn9_both_ends.m` adds to case9 a branch 2-8 (R = 0.2, X = 0.05, B = 2 pu) whose active power is supplied from both buses (pattern (+,-)). It is not compared with the earlier iterative method either: that method gives each of the branch's two rows twice its flow, so its own row sums differ from the flows there; every other row agrees.
 
@@ -427,7 +436,7 @@ write_csv(table_q, "case9_rpfc.csv")            # the CSV layout of apfc.m/rpfc.
 
 **Tests.** `zsh python/run_tests.sh` runs the pytest tests (`python -B -m pytest -p no:cacheprovider`). If Octave is available, it first creates the synthetic exports and the Octave outputs in a scratch folder (`tests/export_synthetic.sh`, `tests/run_matrix.sh`), so that the port is compared with `apfc.m` and `rpfc.m` on every case. Without Octave, those tests are skipped and the runner prints their number. Set `PYTHON` to choose the interpreter.
 
-**Known issue of the earlier iterative pipeline.** `my_runpf.m` computes the from-end shunt flow QSF of a branch with B/2 instead of B/(2·tap²), which matters only for a branch with both an off-nominal tap and line charging. The port therefore does not use the exported QSF and QST, but computes the shunt flows as `rpfc.m` does.
+**Shunt flows.** The port computes the branch-end shunt flows as `rpfc.m` does (rule Q3, line charging of the branch model; see "Branch Model") from BR_B, TAP, VM and baseMVA. It does not use the exported QSF and QST: `my_runpf.m` of the earlier iterative method writes the shunt flows of the real-ratio pi-equivalent of a tap there.
 
 ## Related Work
 

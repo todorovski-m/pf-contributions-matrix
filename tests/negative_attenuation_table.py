@@ -6,7 +6,8 @@ Usage (from the root of the matrix repository):
 For each case:
   - carrier branches with a negative series reactive flow (negative attenuation Qe/Qs): computed from the
     series flows QF1 = QF + QSF and QT1 = QT - QST of the old iterative method (makeReactiveFlows of the
-    pinned submodule), branches that inject at both ends (Case 3: QF < 0, QT > 0) excluded, since they
+    pinned submodule; QSF and QST of the tapped or phase-shifting branches replaced by the line charging of
+    rule Q3 version 2.0, compare_old.formula_shunts), branches that inject at both ends (Case 3: QF < 0, QT > 0) excluded, since they
     are sources, not carriers; the same set is reported by rpfc.m in diag.negative_series_flow;
   - the most negative attenuation QT1/QF1 among them;
   - the negative cells (below -1e-9) of the rpfc.m output, excluding the own terminal injection of a
@@ -29,6 +30,7 @@ print("| case | carrier branches with negative attenuation | of which transforme
 print("|---|---|---|---|---|---|")
 for c in cases:
     bus, gen, branch, xy = pf.load_results(os.path.join(inputs, f"{c}.mat"))
+    branch, _ = co.formula_shunts(branch, bus, os.path.join(inputs, f"{c}.mat"))     # rule Q3 version 2.0 (T16)
     raw = sio.loadmat(os.path.join(inputs, f"{c}.mat"))["branch"]
     fq = pc.makeReactiveFlows(bus, gen, branch)
     E = fq[fq.TYPE == "E"]
