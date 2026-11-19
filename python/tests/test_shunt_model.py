@@ -1,5 +1,5 @@
-"""Rule Q3 (version 2.0) against the branch model, on every branch of case9, syn9_carrier_tap, syn9_case3_tap, syn9_pst
-and syn9_pst_tap (brief T16, S1).
+"""Rule Q3 (version 2.0) against the branch model, on every branch of case9, syn9_carrier_tap, syn9_case3_tap, syn9_pst,
+syn9_pst_tap, syn9_pst_carrier and syn9_pst_carrier_tap (brief T16, S1 and S4).
 
 Branch model: an ideal transformer with complex ratio tau = tap e^(j shift) at the from-end, followed by the pi circuit
 (series admittance ys = 1/(R + jX), line charging B/2 at each end of the circuit), that is the 2x2 stamp
@@ -63,7 +63,7 @@ def model(name):
                             tapped=(tap != 1) | (bm[:, 9] != 0))
 
 
-CASES = ["case9", "syn9_carrier_tap", "syn9_case3_tap", "syn9_pst", "syn9_pst_tap"]
+CASES = ["case9", "syn9_carrier_tap", "syn9_case3_tap", "syn9_pst", "syn9_pst_tap", "syn9_pst_carrier", "syn9_pst_carrier_tap"]
 
 
 @pytest.mark.parametrize("name", CASES)

@@ -1,4 +1,4 @@
-"""Phase-shifter check (brief T14g, part C) on the cases of benchmark/reconstruction/cases/ (syn9_pst, syn9_pst_tap).
+"""Phase-shifter check (brief T14g, part C) on the cases of benchmark/reconstruction/cases/ (syn9_pst, syn9_pst_tap, and the T16 cases syn9_pst_carrier, syn9_pst_carrier_tap).
 
 For each case:
  (a) the port (python/pfc_matrix, on the exported flows) against Octave (apfc.m and rpfc.m of this working tree on the
@@ -37,23 +37,23 @@ import correctness as K      # noqa: E402
 from pfc_matrix import Case, read_branch_params, apfc, rpfc, Options, prepare_active, prepare_reactive  # noqa: E402
 from pfc_matrix.reactive import branch_shunt_flows  # noqa: E402
 
-CASES = ["syn9_pst", "syn9_pst_tap"]
+CASES = ["syn9_pst", "syn9_pst_tap", "syn9_pst_carrier", "syn9_pst_carrier_tap"]
 TOL = 1e-10
-F_, T_ = 8, 9                 # the phase-shifting branch
+
 g = lambda x: f"{x:.17g}"
 
 
 def load_case_file(name):
-    """R, X, B, TAP, SHIFT of branch 8-9 and baseMVA, read from the case file through Octave-free parsing of the
-    MATPOWER text (the branch matrix rows are plain numbers)."""
+    """baseMVA and (from, to, R, X, B, TAP, SHIFT) of the phase-shifting branch (the one branch with SHIFT != 0), read
+    from the case file through Octave-free parsing of the MATPOWER text (the branch matrix rows are plain numbers)."""
     txt = open(os.path.join(HERE, "cases", f"{name}.m")).read()
     base = float(txt.split("mpc.baseMVA = ")[1].split(";")[0])
     rows = txt.split("mpc.branch = [")[1].split("];")[0].strip().splitlines()
     for r in rows:
         v = [float(x) for x in r.replace(";", " ").split()]
-        if int(v[0]) == F_ and int(v[1]) == T_:
-            return base, dict(R=v[2], X=v[3], B=v[4], TAP=v[8], SHIFT=v[9])
-    raise ValueError("branch 8-9 not found")
+        if v[9] != 0:
+            return base, dict(F=int(v[0]), T=int(v[1]), R=v[2], X=v[3], B=v[4], TAP=v[8], SHIFT=v[9])
+    raise ValueError("no branch with SHIFT != 0")
 
 
 def main(exp, octd):
@@ -63,6 +63,7 @@ def main(exp, octd):
         case = Case.from_frames(data["bus"], data["gen"], data["branch"], data["case"], params=read_branch_params(data["path"]))
         out += [f"## {name}", ""]
         base, b = load_case_file(name)
+        F_, T_ = b["F"], b["T"]
         out += [f"Branch {F_}-{T_}: R {b['R']}, X {b['X']}, B {b['B']} pu, TAP {b['TAP']}, SHIFT {b['SHIFT']} degrees; baseMVA {base}.", ""]
         # (a) and (b)
         out += ["| kind | (a) labels equal | (a) max abs diff port - Octave | (a) cells above 1e-10 | "
