@@ -111,19 +111,22 @@ define_constants;
 %  MATPOWER stores PT/QT as power from the to-bus into the branch; sign-correct to power leaving the branch into the to-bus.
 mpc.branch(:, [PT QT]) = -mpc.branch(:, [PT QT]);
 
-%% Calculate reactive power flows in branches' shunt elements
-tap = mpc.branch(:, TAP);  % tap = 0 in MATPOWER means transmission line
+%% Calculate reactive power flows in branches' shunt elements (rule Q3, version 2.0)
+%  Branch model: an ideal transformer with complex ratio tau = tap*exp(j*shift) at the from-end, followed by the
+%  pi circuit (series admittance ys, line charging B/2 at each end of the circuit). The ideal transformer is
+%  lossless and conserves complex power, so the from-end terminal flow equals the flow into the pi circuit at the
+%  internal node, whose voltage magnitude is |V_f|/tap. The shunt flows are therefore the line charging only:
+%      Qsf = (B/2) |V_f|^2 / tap^2 * baseMVA,   Qst = (B/2) |V_t|^2 * baseMVA,
+%  with tap = |TAP| (TAP = 0 means 1). Only |tau| enters; the phase shift SHIFT is not used, so phase-shifting
+%  transformers need no extra rule. (Version 1.0 split an off-nominal tap as the real-ratio pi-equivalent with series
+%  admittance ys/tap, which gave tap-dependent shunt flows also for transformers without line charging and ignored
+%  the phase shift.)
+tap = abs(mpc.branch(:, TAP));  % tap = 0 in MATPOWER means transmission line
 tap(tap == 0) = 1; % set tap = 1 for transmission lines
-V = mpc.bus(:, VM).*exp(1j*mpc.bus(:,VA)/180*pi); % complex bus voltages
 fb = mpc.branch(:, F_BUS); % vector of "from" buses
 tb = mpc.branch(:, T_BUS); % vector of "to" buses
-Yb = 1./(mpc.branch(:, BR_R) + 1j * mpc.branch(:, BR_X)); % branch series admittance
-
-I   = Yb./tap .* (V(fb) - V(tb));
-Qs  = imag(V(fb).*conj(I)) * mpc.baseMVA;
-Qe  = imag(V(tb).*conj(I)) * mpc.baseMVA;
-Qsf = Qs - mpc.branch(:, QF);
-Qst = mpc.branch(:, QT) - Qe;
+Qsf = mpc.bus(fb, VM).^2 .* (mpc.branch(:, BR_B) / 2) ./ tap.^2 * mpc.baseMVA;
+Qst = mpc.bus(tb, VM).^2 .* (mpc.branch(:, BR_B) / 2) * mpc.baseMVA;
 
 % Branches that consume reactive power at both ends (Case 2, QF > 0 and
 % delivered QT < 0) are later replaced by their two terminal demands (C2_b),

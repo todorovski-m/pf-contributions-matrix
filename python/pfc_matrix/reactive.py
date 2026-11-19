@@ -93,22 +93,27 @@ def _require(frame, cols, what):
 
 
 def branch_shunt_flows(case):
-    """[Q3] Shunt flows at the from-end and the to-end of every branch of the input, computed as in rpfc.m from
-    BR_R, BR_X, TAP, VM, VA and baseMVA: I = Yb/tap (Vf - Vt), Qs = Im(Vf conj(I)) baseMVA,
-    Qe = Im(Vt conj(I)) baseMVA, Qsf = Qs - QF, Qst = QT - Qe (QT delivered)."""
+    """[Q3] Shunt flows at the from-end and the to-end of every branch of the input, as in rpfc.m (version 2.0).
+
+    Branch model: an ideal transformer with complex ratio tau = tap e^(j shift) at the from-end, followed by the pi
+    circuit (series admittance ys, line charging B/2 at each end of the circuit). The ideal transformer is lossless and
+    conserves complex power, so the from-end terminal flow equals the flow into the pi circuit at the internal node,
+    whose voltage magnitude is |V_f|/tap. The shunt flows are the line charging only:
+        Qsf = (B/2) |V_f|^2 / tap^2 baseMVA,   Qst = (B/2) |V_t|^2 baseMVA,
+    with tap = |TAP| (TAP = 0 means 1), generation positive. Only |tau| enters, so the phase shift is not used and
+    phase-shifting transformers need no extra rule. (Version 1.0 split an off-nominal tap as the real-ratio
+    pi-equivalent with series admittance ys/tap.) BR_B and baseMVA come from the branch parameters, VM from the bus
+    table, TAP from the branch table."""
     if case.params is None:
         raise PfcError("pfc:input:branchParams", "rpfc needs the branch parameters: build the Case with params=read_branch_params(path)")
     br, bus, p = case.branch, case.bus, case.params
-    tap = br["TAP"].to_numpy(float).copy()
+    tap = np.abs(br["TAP"].to_numpy(float))
     tap[tap == 0] = 1.0
-    V = bus["VM"].to_numpy(float) * np.exp(1j * bus["VA"].to_numpy(float) / 180 * np.pi)
+    vm = bus["VM"].to_numpy(float)
     fb = br["F_BUS"].to_numpy(int) - 1
     tb = br["T_BUS"].to_numpy(int) - 1
-    Yb = 1.0 / (p.frame["BR_R"].to_numpy(float) + 1j * p.frame["BR_X"].to_numpy(float))
-    I = Yb / tap * (V[fb] - V[tb])
-    Qs = np.imag(V[fb] * np.conj(I)) * p.base_mva
-    Qe = np.imag(V[tb] * np.conj(I)) * p.base_mva
-    return Qs - br["QF"].to_numpy(float), br["QT"].to_numpy(float) - Qe
+    half_b = p.frame["BR_B"].to_numpy(float) / 2
+    return vm[fb] ** 2 * half_b / tap ** 2 * p.base_mva, vm[tb] ** 2 * half_b * p.base_mva
 
 
 def prepare_reactive(case, tol=1e-6):

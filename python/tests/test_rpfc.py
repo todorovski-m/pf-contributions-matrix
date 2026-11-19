@@ -23,7 +23,13 @@ BASE = 100.0
 
 
 def make_case(vm, qd, qs, gens, branches, name="t"):
-    """vm, qd, qs: per bus (bus i+1); gens: [(bus, QG)]; branches: [(f, t, X, Qsf, Qst)] with R = 0, tap 1."""
+    """vm, qd, qs: per bus (bus i+1); gens: [(bus, QG)]; branches: [(f, t, X, Qsf, Qst)] with R = 0, tap 1.
+
+    The crafted shunt flows Qsf, Qst are handed to the rules after Q3 directly (columns QSF_TEST and QST_TEST of the
+    branch table, used by the fixture crafted_shunt_flows of conftest.py). Since version 2.0, rule Q3 derives both
+    shunt flows from one line charging B (Qsf = (B/2)|V_f|^2/tap^2, Qst = (B/2)|V_t|^2), so most crafted pairs, for
+    example an inductive shunt at one end only, cannot be written as branch data; these tests check the rules after
+    Q3 (Q5 to Q20), and rule Q3 itself is tested against the branch model in test_shunt_model.py."""
     nb = len(vm)
     bus = pd.DataFrame({"BUS_I": np.arange(1, nb + 1), "PD": 0.0, "QD": np.asarray(qd, float), "VM": np.asarray(vm, float),
                         "VA": 0.0, "QS": np.asarray(qs, float)})
@@ -32,7 +38,8 @@ def make_case(vm, qd, qs, gens, branches, name="t"):
     for f, t, x, qsf, qst in branches:
         vf, vt = vm[f - 1], vm[t - 1]
         qs_ser, qe_ser = vf * (vf - vt) / x * BASE, vt * (vf - vt) / x * BASE
-        rows.append({"F_BUS": f, "T_BUS": t, "PF": 0.0, "QF": qs_ser - qsf, "PT": 0.0, "QT": qe_ser + qst, "TAP": 1.0})
+        rows.append({"F_BUS": f, "T_BUS": t, "PF": 0.0, "QF": qs_ser - qsf, "PT": 0.0, "QT": qe_ser + qst, "TAP": 1.0,
+                     "QSF_TEST": float(qsf), "QST_TEST": float(qst)})
     branch = pd.DataFrame(rows)
     params = BranchParams(frame=pd.DataFrame({"F_BUS": branch.F_BUS, "T_BUS": branch.T_BUS, "BR_R": 0.0,
                                               "BR_X": [b[2] for b in branches], "BR_B": 0.0}), base_mva=BASE)
