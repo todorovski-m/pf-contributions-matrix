@@ -9,12 +9,14 @@ contribution table is timed for
   variants, with the explicit inverse (variant (a), as published) and with one sparse LU (variant (b)).
 The machinery of benchmark/timing/ is imported and not changed: measure_cell (warm-up, repetitions within a budget,
 median, time-out, slow-cell rule), wait_quiet before each cell (outside the timed region), stats and the environment
-record. A guard runs first for each network: the net variant must equal APFC at demand level within 1e-9 MW and the
-two solution methods within 1e-10; a network that fails it is not timed.
+record. A guard runs first for each network, on the same tables as compare.py (bus-demand rows D_<bus>, APFC's
+generator columns summed per bus): the net variant must equal APFC within 1e-9 MW with no demand row missing, and the
+two solution methods must agree within 1e-10; a network that fails it is not timed.
 
 Usage (from the matrix root):
     python -B benchmark/baseline_achayuthakan/baseline_timing.py estimate [--budget 20]
     python -B benchmark/baseline_achayuthakan/baseline_timing.py run --out DIR [--cases ...] [--budget 20] [--smoke]
+    python -B benchmark/baseline_achayuthakan/baseline_timing.py run --guard-only [--cases ...]   (guards only, no timing)
 Outputs: baseline_timing.csv (label, network, method, status, n, median_ns, min_ns, iqr_ns, slow, quiet, load1),
 guard.csv, environment.json, summary.md (with the ratio of each baseline method to the port).
 """
@@ -47,14 +49,33 @@ def runner(data, method):
     return lambda: (A.contributions(data["bus"], data["gen"], data["branch"], kind=kind, method=how), None)
 
 
+GUARD_COLUMNS = ["network", "net_vs_apfc", "rows_missing", "inverse_vs_sparse", "ok"]
+
+
 def guard(data):
+    """The tables of compare.py: APFC's demand rows D_<bus> with the generator columns summed per bus
+    (CMP.apfc_bus_table), the baseline's bus-demand rows D_<bus> only (its terminal-demand rows C2_<bus> have no
+    counterpart there and may repeat a label, as C2_1088 in case_ACTIVSg2000), and the difference by CMP.diff."""
     ap = CMP.apfc_bus_table(data)[0]
+    bus = data["bus"].set_index("BUS_I")
+    demand = np.array([float(bus.loc[int(r[2:]), "PD"]) for r in ap.index])
     net = A.contributions(data["bus"], data["gen"], data["branch"], kind="net", method="sparse")
-    d_apfc = float(np.abs(net.reindex(index=ap.index, columns=ap.columns, fill_value=0.0).to_numpy() - ap.to_numpy()).max())
+    dd = CMP.diff(net.loc[[r for r in net.index if r.startswith("D_")]], ap, demand)
     d_meth = max(float(np.abs(A.contributions(data["bus"], data["gen"], data["branch"], kind=k, method="inverse").to_numpy()
                               - A.contributions(data["bus"], data["gen"], data["branch"], kind=k, method="sparse").to_numpy()).max())
                  for k in ("net", "gross"))
-    return {"net_vs_apfc": d_apfc, "inverse_vs_sparse": d_meth, "ok": d_apfc <= 1e-9 and d_meth <= 1e-10}
+    missing = len(dd["rows_missing"])
+    return {"net_vs_apfc": dd["max_abs"], "rows_missing": missing, "inverse_vs_sparse": d_meth,
+            "ok": dd["max_abs"] <= 1e-9 and missing == 0 and d_meth <= 1e-10}
+
+
+def guard_only(cases):
+    """The guards alone (no timing): a Markdown table, one row per network."""
+    L = ["| " + " | ".join(GUARD_COLUMNS) + " |", "|" + "---|" * len(GUARD_COLUMNS)]
+    for c in cases:
+        gd = guard(CMP.load(c)); gd["network"] = c
+        L.append("| " + " | ".join(f"{gd[k]:.17g}" if isinstance(gd[k], float) else str(gd[k]) for k in GUARD_COLUMNS) + " |")
+    return "\n".join(L)
 
 
 def estimate(cases, budget, quiet_wait):
@@ -92,7 +113,7 @@ def run(a):
         for r in rows:
             w.writerow(r)
     with open(os.path.join(a.out, "guard.csv"), "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=["network", "net_vs_apfc", "inverse_vs_sparse", "ok"], lineterminator="\n"); w.writeheader()
+        w = csv.DictWriter(fh, fieldnames=GUARD_COLUMNS, lineterminator="\n"); w.writeheader()
         for r in guards:
             w.writerow(r)
     with open(os.path.join(a.out, "environment.json"), "w") as fh:
@@ -121,15 +142,20 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     e = sub.add_parser("estimate"); e.add_argument("--cases", default=",".join(CASES)); e.add_argument("--budget", type=float, default=20.0)
     e.add_argument("--quiet-wait", type=float, default=300.0)
-    r = sub.add_parser("run"); r.add_argument("--out", required=True); r.add_argument("--cases", default=",".join(CASES))
+    r = sub.add_parser("run"); r.add_argument("--out"); r.add_argument("--cases", default=",".join(CASES))
     r.add_argument("--budget", type=float, default=20.0); r.add_argument("--min-rep", type=int, default=5)
     r.add_argument("--max-rep", type=int, default=200); r.add_argument("--warmup", type=int, default=2)
     r.add_argument("--timeout", type=float, default=600.0); r.add_argument("--slow", type=float, default=T.SLOW_S)
     r.add_argument("--quiet-wait", type=float, default=300.0); r.add_argument("--quiet-poll", type=float, default=10.0)
     r.add_argument("--smoke", action="store_true")
+    r.add_argument("--guard-only", action="store_true", help="run the guards only and print them; no timing")
     a = ap.parse_args(argv)
     if a.cmd == "estimate":
         print(estimate(a.cases.split(","), a.budget, a.quiet_wait)); return 0
+    if a.guard_only:
+        print(guard_only(a.cases.split(","))); return 0
+    if not a.out:
+        ap.error("run needs --out (unless --guard-only)")
     run(a); return 0
 
 

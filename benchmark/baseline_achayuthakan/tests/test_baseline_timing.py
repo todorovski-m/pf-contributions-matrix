@@ -5,6 +5,8 @@ import csv
 import os
 import sys
 
+import pytest
+
 sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..")))
@@ -21,9 +23,19 @@ def _stub(monkeypatch, calls):
                                                               "load1_start": 0.5, "threshold": 2.0, "top_processes": []})
 
 
-def test_guard_on_case9():
-    g = BT.guard(BT.CMP.load("case9"))
-    assert g["ok"] and g["net_vs_apfc"] <= 1e-9 and g["inverse_vs_sparse"] <= 1e-10
+@pytest.mark.parametrize("name", ["case9", "case118", "case_ACTIVSg2000"])
+def test_guard_on_real_data(name):
+    # real exports, no stub; case_ACTIVSg2000 has terminal-demand rows with a repeated label (C2_1088), which the
+    # guard of the first version could not reindex
+    g = BT.guard(BT.CMP.load(name))
+    assert g["ok"] and g["net_vs_apfc"] <= 1e-9 and g["rows_missing"] == 0 and g["inverse_vs_sparse"] <= 1e-10
+
+
+def test_guard_only_prints_all_networks(capsys):
+    assert BT.main(["run", "--guard-only", "--cases", "case1,case9"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "| " + " | ".join(BT.GUARD_COLUMNS) + " |" and len(out) == 4
+    assert out[2].startswith("| case1 |") and out[3].startswith("| case9 |") and all(l.endswith("| True |") for l in out[2:])
 
 
 def test_run_schema_labels_and_summary(tmp_path, monkeypatch):
