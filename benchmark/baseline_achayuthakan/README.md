@@ -55,13 +55,22 @@ python -B benchmark/baseline_achayuthakan/baseline_timing.py estimate
 zsh benchmark/baseline_achayuthakan/run_baseline_timing.sh
 ```
 
-For each network: the port (checks off) and the four baseline methods (net and gross, explicit inverse and sparse LU),
-each as the complete computation from the power-flow quantities to the demand-level contribution table, with the
-machinery of `benchmark/timing/` (imported, not changed): a guard (net against APFC within 1e-9 MW, inverse against
-sparse within 1e-10), the quiet wait before each cell, warm-up and repetitions within a budget of 20 s per cell, the
-median and the slow-cell rule, and the environment record. Output: `results/<timestamp>/` (ignored by git) with
-`baseline_timing.csv`, `guard.csv`, `environment.json` and `summary.md` (with the ratio of each baseline method to the
-port). Estimate from the settings: 35 cells, at least 700 s; plus up to 300 s of quiet wait per cell on a busy machine.
+Seven cells per network (see `reports/T14h_scope_note.md` for what each timed region contains):
+
+| cell | timed computation | ends at |
+|---|---|---|
+| `port-full` | `timing.port_runner(data, "apfc", False)`, exactly the port cell of the final series: checks off, the read of the branch parameters from the `.mat` file and `Case.from_frames` inside | APFC's full table (demand rows, from-end and to-end rows of every branch) |
+| `port-demand` | the same, followed by the row selection and per-bus summation of `compare.apfc_bus_table` | demand rows `D_<bus>`, generator columns `G_<bus>` summed per bus |
+| `read-only` | `read_branch_params` alone (the file read contained in both port cells) | the branch parameters |
+| `net-inverse`, `net-sparse`, `gross-inverse`, `gross-sparse` | the baseline, both loss variants, explicit inverse or sparse LU; no file read | rows `D_<bus>` and the terminal-demand rows `C2_<bus>` (6 extra rows in case_ACTIVSg2000), columns `G_<bus>` |
+
+The machinery of `benchmark/timing/` is imported, not changed: a guard on the tables of `compare.py` (net against APFC
+within 1e-9 MW with no demand row missing, inverse against sparse within 1e-10), the quiet wait before each cell,
+warm-up and repetitions within a budget of 20 s per cell, the median and the slow-cell rule, and the environment
+record. The guards alone, without timing: `python -B benchmark/baseline_achayuthakan/baseline_timing.py run --guard-only`.
+Output: `results/<timestamp>/` (ignored by git) with `baseline_timing.csv`, `guard.csv`, `environment.json` and
+`summary.md` (with the ratio of each median to the `port-full` and `port-demand` medians). Estimate from the settings:
+49 cells, at least 980 s; plus up to 300 s of quiet wait per cell on a busy machine.
 
 ## Tests
 
@@ -71,4 +80,4 @@ python -B -m pytest -p no:cacheprovider benchmark/baseline_achayuthakan/tests
 
 They reproduce T_d of the paper's Fig. 1 and Fig. 4 examples (eqs. (21), (26)) and A_d of eq. (11), check that net and
 gross agree on those lossless examples, and check conservation, nonnegativity and the agreement of the two solution
-methods on case9 and case118; the timing machinery is tested with a stub instead of measurement (no time is measured).
+methods on case9 and case118; the timing machinery is tested with a stub instead of measurement (no time is measured), and the port-side cells are checked on case9 and case118 (checks off, shapes of the tables).
