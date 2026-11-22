@@ -1,6 +1,6 @@
 # Release notes, version 2.0
 
-Version 2.0 of the matrix-based active and reactive power flow contribution methods (`apfc.m`, `rpfc.m`). All comparisons below are with the archived version 1.0 and its results (`paper_results/`, unchanged in this repository). Version 2.0 was validated under Octave 11.1.0 with MATPOWER 7.1 (with the stand-in table functions of `tests/octave_shims/`); nothing was run in Matlab.
+Version 2.0 of the matrix-based active and reactive power flow contribution methods (`apfc.m`, `rpfc.m`). All comparisons below are with the archived version 1.0 and its results (`paper_results/`, unchanged in this repository). The environments in which version 2.0 was tested are listed under "Tested environments" at the end.
 
 ## Changes in behaviour against version 1.0
 
@@ -24,10 +24,10 @@ Version 2.0 of the matrix-based active and reactive power flow contribution meth
 6. **Positive active demand** is now PD > `opts.tol` (was PD > 0). No test case has a demand in (0, 1e-6].
 7. **A power flow that does not converge** is now an error (`pfc:runpf:notConverged`); version 1.0 continued without a message.
 8. **Branch model of transformers, rule Q3 (RPFC).**
-   - **What changed:** every branch is an ideal transformer with complex ratio τ = tap·e^(j·shift), followed by the pi circuit. The ideal transformer is lossless and conserves complex power, so the branch-end shunt flows are the line charging only: Qsf = (B/2)·VM_f²/tap²·baseMVA and Qst = (B/2)·VM_t²·baseMVA. Only |τ| enters; the phase shift is not used. Version 1.0 split an off-nominal tap as the real-ratio pi-equivalent (series admittance ys/tap), which gave tap-dependent shunt flows, capacitive or inductive, also for transformers without line charging, and ignored the phase shift.
+   - **What changed:** every branch is an ideal transformer with complex ratio τ = tap·e^(j·shift), followed by the pi circuit. The ideal transformer is lossless and conserves complex power, so the branch-end shunt flows are the line charging only, and the from-end line charging is referred to the from-end bus through the ideal transformer by the factor 1/|τ|²: Qsf = (B/2)·VM_f²/tap²·baseMVA and Qst = (B/2)·VM_t²·baseMVA. Only |τ| enters; the phase shift is not used. Version 1.0 split an off-nominal tap as the real-ratio pi-equivalent (series admittance ys/tap), which gave tap-dependent shunt flows, capacitive or inductive, also for transformers without line charging, and ignored the phase shift.
    - **Effect:** the transformer-shunt rows (`Tf_b`, `Tt_b`) of tapped transformers without line charging disappear, and the contributions change; nothing changes for branches without a tap. Phase-shifting transformers are admissible: their shunt flows equal the line charging of the branch model, which tests check against MATPOWER's branch stamp.
-   - **Cases affected (RPFC only; APFC does not use shunt flows):** case118: rows 494 -> 485, largest change of a common cell 207.1470 Mvar; case14: rows 54 -> 51, largest change of a common cell 33.1456 Mvar; tap_loop: rows 7 -> 5, largest change of a common cell 10.3896 Mvar. The carriers with a negative reactive attenuation drop from 12 to 4 in case118 (no transformer among them any more), and its negative contribution cells from 1084 to 51. In tap_loop every row is now attributed to the generator, and the spectral radius of N is 0.70272805899981738.
-   - **Applicability:** of 15 further MATPOWER cases, 8 RPFC combinations that version 1.0 rejected (`pfc:rpfc:spectralRadius` or `pfc:rpfc:zeroInflow`) are accepted (`benchmark/reconstruction/screening_rule_q3_v2.md`).
+   - **Cases affected (RPFC only; APFC does not use shunt flows):** case118: rows 494 -> 485, n_e 300 -> 291, largest change of a common cell 207.1470 Mvar; case14: rows 54 -> 51, largest change of a common cell 33.1456 Mvar; tap_loop: rows 7 -> 5, largest change of a common cell 10.3896 Mvar. The carriers with a negative reactive attenuation drop from 12 to 4 in case118 (no transformer among them any more), and its negative contribution cells from 1084 to 51. In tap_loop every row is now attributed to the generator, and the spectral radius of N^Q changes from 0.17937561102916488 to 0.70272805899981738 (0.179 to 0.703).
+   - **Applicability:** of 15 further MATPOWER cases, APFC is usable in 12 and RPFC in 15 (`benchmark/reconstruction/screening_rule_q3_v2.md`). The 8 RPFC combinations that version 1.0 rejected (`pfc:rpfc:spectralRadius` or `pfc:rpfc:zeroInflow`) are accepted; APFC is unchanged (rule Q3 concerns the shunt flows only), and its three remaining rejections are `pfc:apfc:spectralRadius` (case145) and `pfc:apfc:negativeLoss` (case3012wp, case3375wp).
 
 ## New features
 
@@ -39,6 +39,18 @@ Version 2.0 of the matrix-based active and reactive power flow contribution meth
 - **Terminal classification of branches with one zero terminal (dead-end branches):** the sign of a terminal flow is decided with `tol`. In APFC, a branch with a zero terminal and a demand at the other end is one terminal demand (row `C2_b`), and one that delivers active power with a zero terminal is the error `pfc:apfc:negativeLoss`. In RPFC, such a branch is a member of Case 2 (one demand) or Case 3 (one source) with the zero terminal omitted. New counters `diag.converted.zero_terminal_demands` and `zero_terminal_sources`. Branches with both terminals non-zero are classified as before, so the results of the version 1.0 test cases and of `reference_results/` are unchanged. New synthetic cases `tests/cases_synthetic/syn9_dead_*.m` and tests; see the README.
 - **APFC branches fed from both ends:** a branch whose two active terminal flows both draw power from their buses (pattern (+,-)) is two terminal demands (rows `C2_b`), counted in the new APFC field `diag.converted.case2_branches_to_demands`; a branch that delivers active power at both ends (pattern (-,+)) is the error `pfc:apfc:negativeLoss`. The message of `pfc:apfc:nonPositiveAttenuation`, now a defensive check, reads "Active attenuation Pt/Pf <= 0 (terminal flow at the tolerance; check the input)". The results of the version 1.0 test cases and of `reference_results/` are unchanged. New synthetic case `tests/cases_synthetic/syn9_both_ends.m`.
 - **Negative reactive attenuation** is recorded in `diag.negative_series_flow`. It occurs in standard cases (case14, case24_ieee_rts, case118) and leads to some negative contributions; the README has the table.
+
+## Python port
+
+`python/pfc_matrix` is a Python port of `apfc.m`, `rpfc.m` and `pfc_checks.m` (numpy, scipy, pandas). It reads the exported power flows of the earlier iterative method (`results.mat` of `my_runpf.m`), runs no power flow, and returns the tables of `apfc.m` and `rpfc.m` with the same labels, order and values, and the fields of `diag`. It has the same options, plus `checks` (Python only: `checks=False` switches off the attenuation check, the warning `pfc:apfc:cyclic` and the condition estimate). The tests (`python/run_tests.sh`) compare it with `apfc.m` and `rpfc.m` under Octave on every case. See the README section "Python Port".
+
+## Benchmark files
+
+- `benchmark/export_inputs.sh`, `benchmark/inputs/`, `benchmark/inputs_large/`: the exported power flows of the test cases and of the larger MATPOWER cases, with `benchmark/manifest.py` and `benchmark/check_inputs.py`.
+- `benchmark/timing/`: the runtime and memory comparison of the port with the earlier iterative method (with a guard that compares both methods before timing), and the screening of larger cases (`scan.py`).
+- `benchmark/reconstruction/`: the reconstruction errors and properties of the matrices, the phase-shifter cases and the screening under rule Q3 version 2.0.
+- `benchmark/sources_scaling/`: the scaling with the number of sources.
+- `benchmark/baseline_achayuthakan/`: an independent implementation of the bus-level tracing method of Achayuthakan et al. (2010), its comparison with APFC at demand level, and its runtime machinery.
 
 ## Result files that differ from version 1.0
 
@@ -89,8 +101,8 @@ In addition, `case14_rpfc.csv`, whose shape differs, changed by item 2 (the chan
 
 ## New and changed files
 
-- New: `pfc_checks.m`, `cases/case24_ieee_rts.m`, `reference_results/`, `tests/` (unit tests, comparison tools, synthetic cases, Octave stand-ins, `tests/matlab_check.m`), `RELEASE_NOTES_v2.0.md`.
-- Changed: `apfc.m`, `rpfc.m`, `batch_solve.m` (case24_ieee_rts added), `README.md`, `CITATION.cff` (version 2.0; the DOI must be added after the Zenodo version exists).
+- New: `pfc_checks.m`, `cases/case24_ieee_rts.m`, `reference_results/`, `tests/` (unit tests, comparison tools, synthetic cases, Octave stand-ins, `tests/matlab_check.m`), `RELEASE_NOTES_v2.0.md`, `python/` (the Python port and its tests) and `benchmark/` (see "Benchmark files").
+- Changed: `apfc.m`, `rpfc.m`, `batch_solve.m` (case24_ieee_rts added), `README.md`, `CITATION.cff` (version 2.0, released 2026-11-22; the DOI must be added after the Zenodo version exists).
 - Unchanged: `paper_results/` (the results of version 1.0) and the other case files.
 
 ## Compatibility
@@ -98,6 +110,12 @@ In addition, `case14_rpfc.csv`, whose shape differs, changed by item 2 (the chan
 - `apfc(casedata)` and `rpfc(casedata)` work as before, and write the same files.
 - The result tables differ only as listed above.
 - Code that relies on repeated labels, or on the version 1.0 order of the Case-3 columns, must be adapted.
+
+## Tested environments
+
+- **Octave:** GNU Octave 11.1.0 (aarch64-apple-darwin25.2.0) with MATPOWER 7.1 and the stand-in table functions of `tests/octave_shims/`: `tests/run_tests.sh`.
+- **Python:** Python 3.10.16 with the libraries of `python/requirements.txt`: `python/run_tests.sh`.
+- **Matlab:** MATLAB R2025b (25.2) with MATPOWER 7.1 on Windows, on case9, case118 and case24_ieee_rts only (`tests/matlab_check.m`; the run of 2026-11-21 and its differences are recorded in the header of that file). The other cases and the tests were not run in Matlab.
 
 ## Removed files
 
