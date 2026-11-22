@@ -24,7 +24,7 @@ This package provides matrix-based algorithms for decomposing active and reactiv
 
 **Octave.** The code also runs in GNU Octave, which lacks the Matlab table functions `array2table`, `addvars` and `writetable`. The folder `tests/octave_shims/` contains minimal stand-ins for them. They are **for validation only**: they keep the data and the labels, and write CSV files with 17 significant digits.
 
-**What was run.** Version 2.0 was validated under Octave 11.1.0 with MATPOWER 7.1 and the stand-ins. **Nothing was run in Matlab.** `tests/matlab_check.m` is provided for a check in Matlab (see "Tests").
+**What was tested where.** The tests of version 2.0 (`tests/run_tests.sh`) ran under GNU Octave 11.1.0 with MATPOWER 7.1 and the stand-ins, and the tests of the Python port (`python/run_tests.sh`) under Python 3.10.16. In Matlab (R2025b with MATPOWER 7.1, on Windows), only `tests/matlab_check.m` was run, on the reference cases case9, case118 and case24_ieee_rts: the labels agreed with the Octave results, and the values within the differences recorded in the header of that file. The other cases and the tests have not been run in Matlab.
 
 ### Installation
 
@@ -394,7 +394,7 @@ The synthetic case `tests/cases_synthetic/syn9_both_ends.m` adds to case9 a bran
 
 The synthetic cases `tests/cases_synthetic/syn9_dead_*.m` add to case9 a dead-end bus attached to bus 5 by a branch with line charging, with an inductive susceptance, or with a bus shunt at the dead end, at the from side and at the to side. They are not in that case list either: the earlier iterative method is not a reference for reactive dead ends (it does not finish, or its row sums differ from the flows). Their active part is compared with it by `tests/dead_end_equivalence.py`.
 
-**Matlab check.** In Matlab, from the root of the repository and without `tests/octave_shims` on the path, run `matlab_check('/some/output/folder')`. It runs both functions on case9, case118 and case24_ieee_rts, writes the CSV files with Matlab's `writetable`, and prints the label agreement and the maximum differences against the Octave results in `tests/octave_results/`. It has not been run, because Matlab was not available.
+**Matlab check.** In Matlab, from the root of the repository and without `tests/octave_shims` on the path, run `matlab_check('/some/output/folder')`. It runs both functions on case9, case118 and case24_ieee_rts, writes the CSV files with Matlab's `writetable`, and prints the label agreement and the maximum differences against the Octave results in `tests/octave_results/`. It was run on 2026-11-21 with MATLAB R2025b and MATPOWER 7.1; the results are recorded in the header of `tests/matlab_check.m`.
 
 ## Python Port
 
