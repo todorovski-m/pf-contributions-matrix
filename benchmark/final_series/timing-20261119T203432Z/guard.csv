@@ -1,0 +1,45 @@
+label,case,columns,division_by_zero_risk,excluded_rows,guard_checks,iterations,kind,max_cell,n_e,nnz_N,ok,old_rowsum,old_status,port_equal_public,port_rowsum,predicted_unprocessed,predictor,probe,probe_finished,rows,unmapped_matrix_columns,unmapped_matrix_rows,unmapped_old_columns
+series,case1,2,0,0,port and old (old finished),1,apfc,2.1316282072803006e-14,5,4,True,1.4210854715202004e-14,ok,True,1.4210854715202004e-14,0,can finish,,False,8,[],[],[]
+series,case1,5,0,0,port and old (old finished),1,rpfc,3.552713678800501e-15,5,3,True,3.552713678800501e-15,ok,True,3.552713678800501e-15,0,can finish,,False,9,[],[],[]
+series,case9,3,0,0,port and old (old finished),2,apfc,4.263256414560601e-14,12,12,True,2.842170943040401e-14,ok,True,2.842170943040401e-14,0,can finish,,False,21,[],[],[]
+series,case9,13,0,0,port and old (old finished),2,rpfc,3.552713678800501e-15,11,6,True,3.552713678800501e-15,ok,True,3.552713678800501e-15,0,can finish,,False,22,[],[],[]
+series,case14,2,0,0,port and old (old finished),3,apfc,7.105427357601002e-15,30,43,True,7.105427357601002e-15,ok,True,7.105427357601002e-15,0,can finish,,False,49,[],[],[]
+series,case14,24,0,0,port and old (old finished),5,rpfc,1.7763568394002505e-15,33,40,True,2.6645352591003757e-15,ok,True,2.6645352591003757e-15,0,can finish,,False,51,[],[],[]
+series,case24_ieee_rts,31,0,0,port and old (old finished),9,apfc,1.4210854715202004e-14,56,81,True,1.7053025658242404e-13,ok,True,1.7053025658242404e-13,0,can finish,,False,94,[],[],[]
+series,case24_ieee_rts,63,0,0,port and old (old finished),5,rpfc,1.0658141036401503e-14,64,78,True,1.4210854715202004e-14,ok,True,1.4210854715202004e-14,0,can finish,,False,102,[],[],[]
+series,case30,6,0,0,port and old (old finished),7,apfc,3.552713678800501e-15,60,82,True,7.105427357601002e-15,ok,True,7.105427357601002e-15,0,can finish,,False,100,[],[],[]
+series,case30,47,0,0,port and old (old finished),6,rpfc,3.552713678800501e-15,61,76,True,1.4210854715202004e-14,ok,True,1.4210854715202004e-14,0,can finish,,False,101,[],[],[]
+series,case33,4,0,0,port and old (old finished),7,apfc,2.7755575615628914e-17,64,59,True,5.551115123125783e-17,ok,True,5.551115123125783e-17,0,can finish,,False,96,[],[],[]
+series,case33,36,0,0,port and old (old finished),7,rpfc,2.220446049250313e-16,64,60,True,2.220446049250313e-16,ok,True,2.220446049250313e-16,0,can finish,,False,96,[],[],[]
+series,case118,19,0,0,port and old (old finished),10,apfc,5.684341886080802e-14,285,445,True,8.526512829121202e-14,ok,True,8.526512829121202e-14,0,can finish,,False,471,[],[],[]
+series,case118,239,0,0,port and old (old finished),8,rpfc,1.4210854715202004e-14,291,420,True,1.4210854715202004e-14,ok,True,1.4210854715202004e-14,0,can finish,,False,485,[],[],[]
+series,tap_loop,1,0,0,port and old (old finished),1,apfc,0.0,3,2,True,0.0,ok,True,0.0,0,can finish,,False,5,[],[],[]
+series,tap_loop,3,0,,port only (old did not finish),300,rpfc,,3,3,True,,did not finish (iteration cap),True,0.0,2,predicted stall,"itermax 300, time-out 120 s",False,5,,,
+series,syn9_neg_pd,3,0,0,port and old (old finished),4,apfc,1.4210854715202004e-14,12,12,True,2.842170943040401e-14,ok,True,2.842170943040401e-14,0,can finish,,False,21,[],[],[]
+series,syn9_neg_pd,13,0,0,port and old (old finished),2,rpfc,7.105427357601002e-15,11,6,True,1.4210854715202004e-14,ok,True,1.4210854715202004e-14,0,can finish,,False,22,[],[],[]
+series,syn9_neg_pg,2,0,0,port and old (old finished),4,apfc,1.4210854715202004e-14,13,13,True,2.842170943040401e-14,ok,True,2.842170943040401e-14,0,can finish,,False,22,[],[],[]
+series,syn9_neg_pg,13,0,0,port and old (old finished),2,rpfc,7.105427357601002e-15,11,5,True,3.552713678800501e-15,ok,True,3.552713678800501e-15,0,can finish,,False,22,[],[],[]
+series,syn9_neg_qd,3,0,0,port and old (old finished),2,apfc,1.4210854715202004e-14,12,12,True,2.842170943040401e-14,ok,True,2.842170943040401e-14,0,can finish,,False,21,[],[],[]
+series,syn9_neg_qd,14,0,0,port and old (old finished),3,rpfc,3.552713678800501e-15,10,6,True,7.105427357601002e-15,ok,True,7.105427357601002e-15,0,can finish,,False,22,[],[],[]
+series,syn9_neg_qg,3,0,0,port and old (old finished),2,apfc,1.4210854715202004e-14,12,12,True,1.4210854715202004e-14,ok,True,1.4210854715202004e-14,0,can finish,,False,21,[],[],[]
+series,syn9_neg_qg,13,0,0,port and old (old finished),2,rpfc,4.440892098500626e-16,11,6,True,1.4210854715202004e-14,ok,True,1.4210854715202004e-14,0,can finish,,False,22,[],[],[]
+series,syn9_case3_tap,3,0,0,port and old (old finished),2,apfc,1.4210854715202004e-14,12,12,True,2.842170943040401e-14,ok,True,2.842170943040401e-14,0,can finish,,False,21,[],[],[]
+series,syn9_case3_tap,14,0,0,port and old (old finished),2,rpfc,3.552713678800501e-15,10,3,True,7.105427357601002e-15,ok,True,7.105427357601002e-15,0,can finish,,False,21,[],[],[]
+series,syn9_carrier_tap,3,0,0,port and old (old finished),2,apfc,2.842170943040401e-14,12,12,True,1.4210854715202004e-14,ok,True,1.4210854715202004e-14,0,can finish,,False,21,[],[],[]
+series,syn9_carrier_tap,12,0,0,port and old (old finished),3,rpfc,3.552713678800501e-15,12,9,True,7.105427357601002e-15,ok,True,7.105427357601002e-15,0,can finish,,False,23,[],[],[]
+series,case_ACTIVSg200,38,0,0,port and old (old finished),8,apfc,2.842170943040401e-14,342,483,True,5.684341886080802e-14,ok,True,5.684341886080802e-14,0,can finish,,False,576,[],[],[]
+series,case_ACTIVSg200,270,0,0,port and old (old finished),11,rpfc,3.552713678800501e-15,348,432,True,7.105427357601002e-15,ok,True,7.105427357601002e-15,0,can finish,,False,587,[],[],[]
+series,case300,65,0,0,port and old (old finished),12,apfc,1.7053025658242404e-13,602,897,True,3.410605131648481e-13,ok,True,3.410605131648481e-13,0,can finish,,False,1013,[],[],[]
+series,case300,516,0,,port only (old did not finish),300,rpfc,,574,725,True,,did not finish (iteration cap),True,1.1368683772161603e-13,18,predicted stall,"itermax 300, time-out 120 s",False,1006,,,
+series,case_ACTIVSg500,56,0,0,port and old (old finished),11,apfc,1.1368683772161603e-13,762,1050,True,1.7053025658242404e-13,ok,True,1.7053025658242404e-13,0,can finish,,False,1324,[],[],[]
+series,case_ACTIVSg500,636,0,0,port and old (old finished),7,rpfc,1.4210854715202004e-14,759,955,True,1.4210854715202004e-14,ok,True,1.4210854715202004e-14,0,can finish,,False,1324,[],[],[]
+series,case1354pegase,245,74,,port only (old did not finish),,apfc,,2548,5230,True,,did not finish (error: ZeroDivisionError: float division by zero (at power_components.py:557 in makeAPFC)),True,4.547473508864641e-13,35,predicted stall,"itermax 300, time-out 120 s",False,4373,,,
+series,case1354pegase,3300,0,,port only (old did not finish),300,rpfc,,2669,5285,True,,did not finish (iteration cap),True,5.684341886080802e-14,414,predicted stall,"itermax 300, time-out 120 s",False,4575,,,
+series,case_ACTIVSg2000,430,0,4,port and old (old finished),21,apfc,1.7053025658242404e-13,4243,8507,True,1.2505552149377763e-12,ok,True,1.2505552149377763e-12,0,can finish,,False,7355,[],[],[]
+series,case_ACTIVSg2000,3452,0,0,port and old (old finished),11,rpfc,1.1368683772161603e-13,4486,7572,True,2.2737367544323206e-13,ok,True,2.2737367544323206e-13,0,can finish,,False,7503,[],[],[]
+series,case2383wp,328,60,,port only (old did not finish),,apfc,,4606,5683,True,,did not finish (error: ZeroDivisionError: float division by zero (at power_components.py:557 in makeAPFC)),True,1.1368683772161603e-13,0,can finish,,False,7394,,,
+series,case2383wp,3152,4,,port only (old did not finish),,rpfc,,4629,5662,True,,did not finish (error: ZeroDivisionError: float division by zero (at power_components.py:807 in makeRPFC)),True,5.684341886080802e-14,790,predicted stall,"itermax 300, time-out 120 s",False,7522,,,
+series,case2869pegase,572,75,,port only (old did not finish),,apfc,,5840,12263,True,,did not finish (error: ZeroDivisionError: float division by zero (at power_components.py:557 in makeAPFC)),True,6.821210263296962e-13,109,predicted stall,"itermax 300, time-out 120 s",False,10210,,,
+series,case2869pegase,7237,0,,port only (old did not finish),,rpfc,,6054,12089,True,,did not finish (time-out),True,1.1368683772161603e-13,1056,predicted stall,"itermax 300, time-out 120 s",False,10437,,,
+series,case3120sp,4036,0,,port only (old did not finish),300,rpfc,,5829,6900,True,,did not finish (iteration cap),True,5.684341886080802e-14,1076,predicted stall,"itermax 300, time-out 120 s",False,9575,,,
+series,case_ACTIVSg10k,1937,0,,port only (old did not finish),,apfc,,16161,24157,True,,did not finish (time-out),True,6.821210263296962e-13,178,predicted stall,"itermax 300, time-out 120 s",False,28150,,,

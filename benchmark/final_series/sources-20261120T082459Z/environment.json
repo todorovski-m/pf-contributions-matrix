@@ -1,0 +1,124 @@
+{
+ "label": "series",
+ "smoke": false,
+ "date_utc": "2026-11-20T08:25:02+00:00",
+ "date_local": "2026-11-20T09:25:02+01:00",
+ "cpu_model": "Apple M2",
+ "cores_logical": 8,
+ "cores_physical": "8",
+ "memory_bytes": "8589934592",
+ "os": "Darwin 27.0.0; ProductName:\t\tmacOS; ProductVersion:\t\t27.0.1; BuildVersion:\t\t26A434",
+ "python": "3.10.16 (main, Mar  8 2025, 22:07:31) [Clang 16.0.0 (clang-1600.0.26.6)]",
+ "python_executable": "/Users/mirko/.pyenv/versions/3.10.16/bin/python",
+ "numpy": "2.2.6",
+ "scipy": "1.13.1",
+ "pandas": "2.2.3",
+ "networkx": "3.4.2",
+ "threads": {
+  "OMP_NUM_THREADS": "1",
+  "OPENBLAS_NUM_THREADS": "1",
+  "MKL_NUM_THREADS": "1",
+  "VECLIB_MAXIMUM_THREADS": "1",
+  "NUMEXPR_NUM_THREADS": "1"
+ },
+ "blas": {
+  "Compilers": {
+   "c": {
+    "name": "clang",
+    "linker": "ld64",
+    "version": "15.0.0",
+    "commands": "cc"
+   },
+   "cython": {
+    "name": "cython",
+    "linker": "cython",
+    "version": "3.1.0",
+    "commands": "cython"
+   },
+   "c++": {
+    "name": "clang",
+    "linker": "ld64",
+    "version": "15.0.0",
+    "commands": "c++"
+   }
+  },
+  "Machine Information": {
+   "host": {
+    "cpu": "aarch64",
+    "family": "aarch64",
+    "endian": "little",
+    "system": "darwin"
+   },
+   "build": {
+    "cpu": "aarch64",
+    "family": "aarch64",
+    "endian": "little",
+    "system": "darwin"
+   }
+  },
+  "Build Dependencies": {
+   "blas": {
+    "name": "accelerate",
+    "found": true,
+    "version": "unknown",
+    "detection method": "system",
+    "include directory": "unknown",
+    "lib directory": "unknown",
+    "openblas configuration": "unknown",
+    "pc file directory": "unknown"
+   },
+   "lapack": {
+    "name": "accelerate",
+    "found": true,
+    "version": "unknown",
+    "detection method": "system",
+    "include directory": "unknown",
+    "lib directory": "unknown",
+    "openblas configuration": "unknown",
+    "pc file directory": "unknown"
+   }
+  },
+  "Python Information": {
+   "path": "/private/var/folders/w5/_8wgjw3j5cg6mgrth3s2kg9m0000gn/T/build-env-g9clshsu/bin/python",
+   "version": "3.10"
+  },
+  "SIMD Extensions": {
+   "baseline": [
+    "NEON",
+    "NEON_FP16",
+    "NEON_VFPV4",
+    "ASIMD"
+   ],
+   "found": [
+    "ASIMDHP"
+   ],
+   "not found": [
+    "ASIMDFHM"
+   ]
+  }
+ },
+ "git_matrix": "8189cd5f19211dfecbdb4b190a99dd5e904ae674",
+ "git_matrix_dirty": false,
+ "git_submodule": "7d4cd364f81598d128e6e4b4c8666ed020375928",
+ "power": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22872163)\t80%; AC attached; not charging present: true",
+ "caffeinate_env": false,
+ "caffeinate_process": true,
+ "ru_maxrss_unit": "bytes",
+ "args": {
+  "cmd": "run",
+  "out": "benchmark/sources_scaling/results/20261120T082459Z",
+  "cases": "case118,case_ACTIVSg500,case_ACTIVSg2000",
+  "budget": 20.0,
+  "min_rep": 5,
+  "max_rep": 200,
+  "warmup": 2,
+  "timeout": 600.0,
+  "slow": 30.0,
+  "quiet_wait": 300.0,
+  "quiet_poll": 10.0,
+  "kmax": null,
+  "smoke": false
+ },
+ "seed": 20261119,
+ "kmax_repeated": 16
+}
